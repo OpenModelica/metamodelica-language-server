@@ -1,0 +1,4 @@
+.vscode-test
+metamodelica-language-server*.vsix
+node_modules/
+out/
