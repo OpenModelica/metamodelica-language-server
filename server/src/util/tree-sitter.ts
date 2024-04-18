@@ -140,17 +140,6 @@ export function findParent(
 }
 
 /**
- * Get identifier from node.
- *
- * @param start   Syntax tree node.
- */
-export function getIdentifier(start: SyntaxNode): string | undefined {
-
-  const node = findFirst(start, (n: SyntaxNode) => n.type == 'IDENT');
-  return node?.text;
-}
-
-/**
  * Get class type from `class_definition` node.
  *
  * @param node  Class definition node.
