@@ -42,7 +42,7 @@
 import * as LSP from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
-import Parser = require('web-tree-sitter');
+import Parser from 'web-tree-sitter';
 
 import {
   getAllDeclarationsInTree
@@ -51,16 +51,58 @@ import { logger } from './util/logger';
 
 type AnalyzedDocument = {
   document: TextDocument,
-  declarations: LSP.SymbolInformation[],
+  declarations: LSP.DocumentSymbol[],
   tree: Parser.Tree
+}
+
+export class MetaModelicaQueries {
+  public identifierQuery: Parser.Query;
+  public classTypeQuery: Parser.Query;
+
+  constructor(language: Parser.Language) {
+    this.identifierQuery = language.query('(IDENT) @identifier');
+    this.classTypeQuery = language.query('(class_type) @type');
+  }
+
+  /**
+   * Get identifier from node.
+   *
+   * @param node Node.
+   * @returns Identifier
+   */
+  public getIdentifier(node: Parser.SyntaxNode): string | undefined {
+    const captures = this.identifierQuery.captures(node);
+    if (captures.length > 0) {
+      return captures[0].node.text;
+    } else {
+      return undefined;
+    }
+  }
+
+  /**
+   * Get class type from class_definition node.
+   *
+   * @param node Node.
+   * @returns Class type
+   */
+  public getClassType(node: Parser.SyntaxNode): string | undefined {
+    const captures = this.classTypeQuery.captures(node);
+    if (captures.length > 0) {
+      return captures[0].node.text;
+    } else {
+      return undefined;
+    }
+  }
 }
 
 export default class Analyzer {
   private parser: Parser;
   private uriToAnalyzedDocument: Record<string, AnalyzedDocument | undefined> = {};
+  private queries: MetaModelicaQueries;
 
   constructor (parser: Parser) {
     this.parser = parser;
+    this.queries = new MetaModelicaQueries(parser.getLanguage());
   }
 
   public analyze(document: TextDocument): LSP.Diagnostic[] {
@@ -74,7 +116,7 @@ export default class Analyzer {
     logger.debug(tree.rootNode.toString());
 
     // Get declarations
-    const declarations = getAllDeclarationsInTree(tree, uri);
+    const declarations = getAllDeclarationsInTree(tree, this.queries);
 
     // Update saved analysis for document uri
     this.uriToAnalyzedDocument[uri] = {
@@ -89,15 +131,14 @@ export default class Analyzer {
   /**
    * Get all symbol declarations in the given file. This is used for generating an outline.
    *
-   * TODO: convert to DocumentSymbol[] which is a hierarchy of symbols found in a given text document.
    */
-  public getDeclarationsForUri(uri: string): LSP.SymbolInformation[] {
+  public getDeclarationsForUri(uri: string): LSP.DocumentSymbol[] {
     const tree = this.uriToAnalyzedDocument[uri]?.tree;
 
     if (!tree?.rootNode) {
       return [];
     }
 
-    return getAllDeclarationsInTree(tree, uri);
+    return getAllDeclarationsInTree(tree, this.queries,);
   }
 }

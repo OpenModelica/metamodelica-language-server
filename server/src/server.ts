@@ -145,10 +145,7 @@ export class MetaModelicaServer {
    * @param params  Unused.
    * @returns       Symbol information.
    */
-  private onDocumentSymbol(params: LSP.DocumentSymbolParams): LSP.SymbolInformation[] {
-    // TODO: ideally this should return LSP.DocumentSymbol[] instead of LSP.SymbolInformation[]
-    // which is a hierarchy of symbols.
-    // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol
+  private onDocumentSymbol(params: LSP.DocumentSymbolParams): LSP.DocumentSymbol[] {
     logger.debug(`onDocumentSymbol`);
     return this.analyzer.getDeclarationsForUri(params.textDocument.uri);
   }

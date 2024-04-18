@@ -43,84 +43,110 @@ import * as Parser from 'web-tree-sitter';
 
 import * as TreeSitterUtil from './tree-sitter';
 import { logger } from './logger';
+import { MetaModelicaQueries } from './../analyzer';
 
 const isEmpty = (data: string): boolean => typeof data === "string" && data.trim().length == 0;
 
-export type GlobalDeclarations = { [word: string]: LSP.SymbolInformation }
-export type Declarations = { [word: string]: LSP.SymbolInformation[] }
-
-const GLOBAL_DECLARATION_LEAF_NODE_TYPES = new Set([
-  'if_statement',
-  'function_definition',
-]);
-
 /**
- * Returns all declarations (functions or variables) from a given tree.
+ * Returns all class declarations from a given tree.
  *
- * @param tree  Tree-sitter tree.
- * @param uri   The document's uri.
- * @returns     Symbol information for all declarations.
+ * @param tree      Tree-sitter tree.
+ * @param queries   MetaModelica language queries.
+ * @returns         Symbol information for all declarations.
  */
-export function getAllDeclarationsInTree(tree: Parser.Tree, uri: string): LSP.SymbolInformation[] {
-  const symbols: LSP.SymbolInformation[] = [];
+export function getAllDeclarationsInTree(tree: Parser.Tree, queries: MetaModelicaQueries): LSP.DocumentSymbol[] {
+  const documentSymbols: LSP.DocumentSymbol[] = [];
+  const cursor = tree.walk();
+  let reachedRoot = false;
 
-  TreeSitterUtil.forEach(tree.rootNode, (node) => {
-    const symbol = getDeclarationSymbolFromNode(node, uri);
-    if (symbol) {
-      symbols.push(symbol);
+  // Walk depth-first to each class_definition node.
+  // Update DocumentSymbol children when going back up.
+  while(!reachedRoot) {
+    const currentNode = cursor.currentNode();
+
+    if (cursor.nodeType === "class_definition") {
+      const symbol = nodeToDocumentSymbol(currentNode, queries, []);
+      if (symbol) {
+        documentSymbols.push(symbol);
+      }
     }
-  });
 
-  return symbols;
+    if (cursor.gotoFirstChild()) {
+      continue;
+    }
+
+    if (cursor.gotoNextSibling()) {
+      continue;
+    }
+
+    let retracing = true;
+    while (retracing) {
+      // Try to go to parent
+      if (cursor.gotoParent()) {
+        if (cursor.nodeType === "class_definition") {
+          let tmp = undefined;
+          if (documentSymbols.length > 1) {
+            tmp = documentSymbols.pop();
+          }
+          if (tmp) {
+            if (documentSymbols.length > 0) {
+              documentSymbols[documentSymbols.length - 1].children?.push(tmp);
+            }
+          }
+        }
+      } else {
+        retracing = false;
+        reachedRoot = true;
+      }
+
+      if (cursor.gotoNextSibling()) {
+        retracing = false;
+      }
+    }
+  }
+
+  return documentSymbols;
 }
 
 /**
  * Converts node to symbol information.
  *
- * @param tree  Tree-sitter tree.
- * @param uri   The document's uri.
- * @returns     Symbol information from node.
+ * @param tree      Tree-sitter tree.
+ * @param queries   MetaModelica language queries.
+ * @param children  DocumentSymbol children.
+ * @returns         Symbol information from node.
  */
-export function nodeToSymbolInformation(node: Parser.SyntaxNode, uri: string): LSP.SymbolInformation | null {
-  const named = node.firstNamedChild;
-
-  if (named === null) {
-    return null;
-  }
-
-  const name = TreeSitterUtil.getIdentifier(node);
+export function nodeToDocumentSymbol(node: Parser.SyntaxNode, queries: MetaModelicaQueries, children: LSP.DocumentSymbol[] ): LSP.DocumentSymbol | null {
+  const name = queries.getIdentifier(node);
   if (name === undefined || isEmpty(name)) {
     return null;
   }
 
-  const kind = getKind(node);
-
-  const containerName =
-    TreeSitterUtil.findParent(node, (p) => p.type === 'function_definition')
-      ?.firstNamedChild?.text || '';
-
-  return LSP.SymbolInformation.create(
-    name,
-    kind || LSP.SymbolKind.Variable,
-    TreeSitterUtil.range(node),
-    uri,
-    containerName,
-  );
-}
-
-/**
- * Get declaration from node and convert to symbol information.
- *
- * @param node  Root node of tree.
- * @param uri   The associated URI for this document.
- * @returns     LSP symbol information for definition.
- */
-function getDeclarationSymbolFromNode(node: Parser.SyntaxNode, uri: string): LSP.SymbolInformation | null {
-  if (TreeSitterUtil.isDefinition(node)) {
-    return nodeToSymbolInformation(node, uri);
+  const detail = [];
+  if ( node.childForFieldName("encapsulated") ) {
+    detail.push("encapsulated");
   }
+  if ( node.childForFieldName("partial") ) {
+    detail.push("partial");
+  }
+  detail.push(queries.getClassType(node));
 
-  return null;
+  const kind = getKind(node, queries) || LSP.SymbolKind.Variable;
+
+  const range = TreeSitterUtil.range(node);
+  const selectionRange =  TreeSitterUtil.range(queries.identifierQuery.captures(node)[0].node) || range;
+
+  // Walk tree to find next class_definition
+  const cursor = node.walk();
+
+  return LSP.DocumentSymbol.create(
+    name,
+    detail.join(" "),
+    kind,
+    range,
+    selectionRange,
+    children
+  );
 }
 
 /**
@@ -129,14 +155,14 @@ function getDeclarationSymbolFromNode(node: Parser.SyntaxNode, uri: string): LSP
  * @param node Node containing class_definition
  * @returns Symbol kind or `undefined`.
  */
-function getKind(node: Parser.SyntaxNode): LSP.SymbolKind | undefined {
+function getKind(node: Parser.SyntaxNode, queries: MetaModelicaQueries): LSP.SymbolKind | undefined {
 
-  const classTypes = TreeSitterUtil.getClassType(node)?.split(/\s+/);
-  if (classTypes === undefined) {
+  const classType = queries.getClassType(node);
+  if (classType === undefined) {
     return undefined;
   }
 
-  switch (classTypes[classTypes.length - 1]) {
+  switch (classType) {
     case 'class':
     case 'optimization':
     case 'model':
@@ -150,6 +176,7 @@ function getKind(node: Parser.SyntaxNode): LSP.SymbolKind | undefined {
     case 'uniontype':
       return LSP.SymbolKind.Package;
     case 'record':
+      return LSP.SymbolKind.Struct;
     case 'type':
       return LSP.SymbolKind.TypeParameter;
     default:

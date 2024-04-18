@@ -36,28 +36,77 @@
 import * as assert from 'assert';
 import * as LSP from 'vscode-languageserver/node';
 
+import { MetaModelicaQueries } from '../../analyzer';
 import { initializeParser } from '../../parser';
-import { getAllDeclarationsInTree, nodeToSymbolInformation } from '../declarations';
+import { getAllDeclarationsInTree, nodeToDocumentSymbol } from '../declarations';
 
 const metaModelicaTestString = `
-model M "Description"
-end M;
-
-function foo
-end foo;
-
-type Temperature = Real(unit = "K");
+//Some comment
+encapsulated package A<T>
+  package B1
+    partial function foo
+    end foo;
+    record R
+    end R;
+  end B1;
+  package B2
+  end B2;
+end A;
 `;
 
-const expectedDefinitions = ["M", "foo", "Temperature"];
+const expectedSymbols = [
+  LSP.DocumentSymbol.create(
+    "A",
+    "encapsulated package",
+    LSP.SymbolKind.Package,
+    LSP.Range.create(LSP.Position.create(2,0), LSP.Position.create(11,5)),
+    LSP.Range.create(LSP.Position.create(2,21), LSP.Position.create(2,22)),
+    [
+      LSP.DocumentSymbol.create(
+        "B1",
+        "package",
+        LSP.SymbolKind.Package,
+        LSP.Range.create(LSP.Position.create(3,2), LSP.Position.create(8,8)),
+        LSP.Range.create(LSP.Position.create(3,10), LSP.Position.create(3,12)),
+        [
+          LSP.DocumentSymbol.create(
+            "foo",
+            "partial function",
+            LSP.SymbolKind.Function,
+            LSP.Range.create(LSP.Position.create(4,4), LSP.Position.create(5,11)),
+            LSP.Range.create(LSP.Position.create(4,21), LSP.Position.create(4,24)),
+            []
+          ),
+          LSP.DocumentSymbol.create(
+            "R",
+            "record",
+            LSP.SymbolKind.Struct,
+            LSP.Range.create(LSP.Position.create(6,4), LSP.Position.create(7,9)),
+            LSP.Range.create(LSP.Position.create(6,11), LSP.Position.create(6,12)),
+            []
+          ),
+        ]
+      ),
+      LSP.DocumentSymbol.create(
+        "B2",
+        "package",
+        LSP.SymbolKind.Package,
+        LSP.Range.create(LSP.Position.create(9,2), LSP.Position.create(10,8)),
+        LSP.Range.create(LSP.Position.create(9,10), LSP.Position.create(9,12)),
+        []
+      ),
+    ]
+  )
+];
+
 const expectedTypes = [LSP.SymbolKind.Class, LSP.SymbolKind.Function, LSP.SymbolKind.TypeParameter];
 
-describe('nodeToSymbolInformation', () => {
+describe('nodeToDocumentSymbol', () => {
   it('type to TypeParameter', async () => {
   const parser = await initializeParser();
   const tree = parser.parse("type Temperature = Real(unit = \"K \");");
-
-  const symbol = nodeToSymbolInformation(tree.rootNode.childForFieldName("classDefinitionList")!, "file.mo");
+  const queries = new MetaModelicaQueries(parser.getLanguage());
+  const symbol = nodeToDocumentSymbol(tree.rootNode.childForFieldName("classDefinitionList")!, queries, []);
 
   assert.equal(symbol?.name, 'Temperature');
   assert.equal(symbol?.kind, LSP.SymbolKind.TypeParameter);
@@ -68,16 +117,12 @@ describe('getAllDeclarationsInTree', () => {
   it('Definitions and types', async () => {
     const parser = await initializeParser();
     const tree = parser.parse(metaModelicaTestString);
-    const symbols = getAllDeclarationsInTree(tree, "file.mo");
+    const queries = new MetaModelicaQueries(parser.getLanguage());
+    const symbols = getAllDeclarationsInTree(tree, queries);
 
-    const definitions: string[] = [];
-    const types: LSP.SymbolKind[] = [];
-    for (let i = 0; i < symbols.length; i++) {
-      definitions.push(symbols[i].name);
-      types.push(symbols[i].kind);
-    }
+    console.log(symbols![0].children![0].children![1].range);
+    console.log(symbols![0].children![0].children![1].selectionRange);
 
-    assert.deepEqual(definitions, expectedDefinitions);
-    assert.deepEqual(types, expectedTypes);
+    assert.deepEqual(symbols, expectedSymbols);
   });
 });
