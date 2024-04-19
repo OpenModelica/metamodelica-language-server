@@ -45,6 +45,8 @@ export function getFileExtension(document: TextDocument): string | undefined {
 }
 
 function hasMetaModelicaKeywords(content: string): boolean {
+  // TODO: Improve this by parsing the file as MetaModelica and check if it has
+  // any MetaModelica only keywors in the tree.
   const unionRegex = new RegExp('\\b(uniontype)\\s+(\\w+)\\s*(".*")*');
 
   return unionRegex.test(content);
