@@ -44,9 +44,8 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 
 import Parser from 'web-tree-sitter';
 
-import {
-  getAllDeclarationsInTree
-} from './util/declarations';
+import { getAllDeclarationsInTree } from './util/declarations';
+import { getDiagnosticsFromTree } from './util/diagnostics';
 import { logger } from './util/logger';
 
 type AnalyzedDocument = {
@@ -58,10 +57,16 @@ type AnalyzedDocument = {
 export class MetaModelicaQueries {
   public identifierQuery: Parser.Query;
   public classTypeQuery: Parser.Query;
+  public errorQuery: Parser.Query;
+  public illegalEqualsQuery: Parser.Query;
+  public illegalAssignQuery: Parser.Query;
 
   constructor(language: Parser.Language) {
     this.identifierQuery = language.query('(IDENT) @identifier');
     this.classTypeQuery = language.query('(class_type) @type');
+    this.errorQuery = language.query('(ERROR) @error');
+    this.illegalEqualsQuery = language.query('(assign_clause_a (simple_expression) (EQUALS) @error )');
+    this.illegalAssignQuery = language.query('[ ( equation (simple_expression) (ASSIGN) @error ) ( constraint (simple_expression) (ASSIGN) @error ) ]');
   }
 
   /**
@@ -108,7 +113,6 @@ export default class Analyzer {
   public analyze(document: TextDocument): LSP.Diagnostic[] {
     logger.debug('analyze:');
 
-    const diagnostics: LSP.Diagnostic[] = [];
     const fileContent = document.getText();
     const uri = document.uri;
 
@@ -117,6 +121,9 @@ export default class Analyzer {
 
     // Get declarations
     const declarations = getAllDeclarationsInTree(tree, this.queries);
+
+    // Get diagnostics
+    const diagnostics: LSP.Diagnostic[] = getDiagnosticsFromTree(tree, this.queries);
 
     // Update saved analysis for document uri
     this.uriToAnalyzedDocument[uri] = {

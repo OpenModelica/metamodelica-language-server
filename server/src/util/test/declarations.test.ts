@@ -99,8 +99,6 @@ const expectedSymbols = [
   )
 ];
 
-const expectedTypes = [LSP.SymbolKind.Class, LSP.SymbolKind.Function, LSP.SymbolKind.TypeParameter];
-
 describe('nodeToDocumentSymbol', () => {
   it('type to TypeParameter', async () => {
   const parser = await initializeParser();
@@ -119,9 +117,6 @@ describe('getAllDeclarationsInTree', () => {
     const tree = parser.parse(metaModelicaTestString);
     const queries = new MetaModelicaQueries(parser.getLanguage());
     const symbols = getAllDeclarationsInTree(tree, queries);
-
-    console.log(symbols![0].children![0].children![1].range);
-    console.log(symbols![0].children![0].children![1].selectionRange);
 
     assert.deepEqual(symbols, expectedSymbols);
   });

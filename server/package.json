@@ -3,8 +3,8 @@
   "displayName": "MetaModelica Language Server",
   "description": "[Experimental] MetaModelica language server.",
   "version": "0.1.0",
-  "author": "Andreas Heuermann, Osman Karabel",
-  "license": "OSMC-PL-1-8",
+  "author": "Andreas Heuermann",
+  "license": "See ../OSMC-License.txt",
   "engines": {
     "node": "20"
   },
@@ -13,10 +13,16 @@
     "url": "https://github.com/OpenModelica/metamodelica-language-server"
   },
   "dependencies": {
-    "tree-sitter": "^0.20.6",
+    "tree-sitter": "^0.21.1",
     "vscode-languageserver": "^9.0.1",
     "vscode-languageserver-textdocument": "^1.0.11",
-    "web-tree-sitter": "^0.20.8"
+    "web-tree-sitter": "^0.22.5"
   },
-  "scripts": {}
+  "scripts": {
+    "postinstall": "cd node_modules/tree-sitter-metamodelica && npx tree-sitter generate && npx tree-sitter build --wasm --docker ."
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.22.5",
+    "tree-sitter-metamodelica": "github:OpenModelica/tree-sitter-metamodelica#v0.3.0"
+  }
 }

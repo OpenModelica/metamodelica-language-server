@@ -95,7 +95,11 @@ export class MetaModelicaServer {
       signatureHelpProvider: undefined,
       documentSymbolProvider: true,
       colorProvider: false,
-      semanticTokensProvider: undefined
+      semanticTokensProvider: undefined,
+      //diagnosticProvider: {
+      //  interFileDependencies: false,
+      //  workspaceDiagnostics: false
+      //}
     };
   }
 
@@ -134,9 +138,16 @@ export class MetaModelicaServer {
     });
   }
 
-
+  /**
+   * Analyze document and send diagnostics via connection.
+   *
+   * @param document Text document.
+   */
   private async analyzeDocument(document: TextDocument) {
+    const { uri } = document;
     const diagnostics = this.analyzer.analyze(document);
+
+    this.connection.sendDiagnostics({uri, diagnostics});
   }
 
   /**

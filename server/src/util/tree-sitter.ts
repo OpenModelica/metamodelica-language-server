@@ -72,7 +72,7 @@ export function findFirst(start: SyntaxNode, callback: (n: SyntaxNode) => boolea
   let retracing = false;
 
   while (!reachedRoot) {
-    const node = cursor.currentNode();
+    const node = cursor.currentNode;
     if (callback(node) === true ) {
       return node;
     }
