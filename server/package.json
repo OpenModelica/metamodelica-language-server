@@ -19,7 +19,7 @@
     "web-tree-sitter": "^0.22.5"
   },
   "scripts": {
-    "postinstall": "cd node_modules/tree-sitter-metamodelica && npx tree-sitter generate && npx tree-sitter build --wasm --docker ."
+    "postinstall": "cd node_modules/tree-sitter-metamodelica && npx tree-sitter generate && npx tree-sitter build --wasm --docker . && cp tree-sitter-metamodelica.wasm ../../src"
   },
   "devDependencies": {
     "tree-sitter-cli": "^0.22.5",

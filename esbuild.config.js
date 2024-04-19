@@ -35,5 +35,5 @@ esbuild.build({
 if (!fs.existsSync('out')) {
   fs.mkdirSync('out');
 }
-fs.copyFileSync('./server/node_modules/tree-sitter-metamodelica/tree-sitter-metamodelica.wasm', './out/tree-sitter-metamodelica.wasm');
+fs.copyFileSync('./server/src/tree-sitter-metamodelica.wasm', './out/tree-sitter-metamodelica.wasm');
 fs.copyFileSync('./server/node_modules/web-tree-sitter/tree-sitter.wasm', './out/tree-sitter.wasm');
