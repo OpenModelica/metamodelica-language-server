@@ -3,7 +3,7 @@
   "description": "VSCode part of a language server",
   "author": "Andreas Heuermann",
   "license": "See ../OSMC-License.txt",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "vscode",
   "repository": {
     "type": "git",

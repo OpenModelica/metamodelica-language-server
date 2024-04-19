@@ -2,7 +2,7 @@
   "name": "metamodelica-language-server",
   "displayName": "MetaModelica Language Server",
   "description": "[Experimental] MetaModelica language server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "Andreas Heuermann",
   "license": "See OSMC-License.txt",
   "repository": {
