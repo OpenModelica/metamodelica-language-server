@@ -52,7 +52,7 @@ export async function initializeParser(): Promise<Parser> {
   await Parser.init();
   const parser = new Parser;
 
-  const metamodelicaWasmFile = path.join(__dirname, 'tree-sitter-metamodelica.wasm');
+  const metamodelicaWasmFile = path.join(__dirname, '..', 'node_modules', 'tree-sitter-metamodelica', 'tree-sitter-metamodelica.wasm');
   if (!fs.existsSync(metamodelicaWasmFile)) {
     throw new Error(`Can't find 'tree-sitter-metamodelica.wasm' at ${metamodelicaWasmFile}`);
   }
