@@ -62,7 +62,7 @@ export function getAllDeclarationsInTree(tree: Parser.Tree, queries: MetaModelic
   // Walk depth-first to each class_definition node.
   // Update DocumentSymbol children when going back up.
   while(!reachedRoot) {
-    const currentNode = cursor.currentNode();
+    const currentNode = cursor.currentNode;
 
     if (cursor.nodeType === "class_definition") {
       const symbol = nodeToDocumentSymbol(currentNode, queries, []);

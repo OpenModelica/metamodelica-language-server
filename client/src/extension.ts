@@ -59,6 +59,9 @@ export function activate(context: ExtensionContext) {
     if (getFileExtension(document) == '.mo') {
       const lang = getLanguage(document);
 
+      // TODO: Fix this mess!
+      languages.setTextDocumentLanguage(document, 'metamodelica');
+      /*
       switch (lang) {
         case 'modelica':
           languages.setTextDocumentLanguage(document, 'modelica');
@@ -69,6 +72,7 @@ export function activate(context: ExtensionContext) {
         default:
           break;
       }
+      */
     }
   });
 

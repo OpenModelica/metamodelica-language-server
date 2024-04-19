@@ -18,6 +18,10 @@ features:
 
     ![Outline](images/outline_demo.png)
 
+  - Diagnostics:
+
+    ![Diagnostics](images/problemMatching.png)
+
 ## Installation
 
 ### Via Marketplace
