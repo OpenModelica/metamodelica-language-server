@@ -134,7 +134,7 @@ export function nodeToDocumentSymbol(node: Parser.SyntaxNode, queries: MetaModel
   const kind = getKind(node, queries) || LSP.SymbolKind.Variable;
 
   const range = TreeSitterUtil.range(node);
-  const selectionRange =  TreeSitterUtil.range(queries.identifierQuery.captures(node)[0].node) || range;
+  const selectionRange =  TreeSitterUtil.range(queries.identifier.captures(node)[0].node) || range;
 
   // Walk tree to find next class_definition
   const cursor = node.walk();

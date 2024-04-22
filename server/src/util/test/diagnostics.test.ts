@@ -43,23 +43,28 @@ import { getDiagnosticsFromTree } from '../diagnostics';
 const metaModelicaTestString = `
 function foo
   input Boolean inKey;
-  output Boolean res;
+  output Boolean res1;
+  output Boolean res2;
 algorithm
-  res := match(inKey)
+  res1 := match (inKey)
     local
     case (true) equation
       true := realEq(factor1, factor2);
       true = intEq(i1, j1);
     then true;
 
-    case (false) algorithm
+    case (_) algorithm
       true := realEq(factor1, factor2);
       true = intEq(i1, j1);
     then false;
-
-    else false;
   end match;
-end foo;
+
+  res2 := matchcontinue(inKey)
+    case (true) equation
+    then true;
+    else false;
+  end matchcontinue;
+end bar;
 `;
 
 const expectedDiagnostics: LSP.Diagnostic[] = [
@@ -68,11 +73,11 @@ const expectedDiagnostics: LSP.Diagnostic[] = [
     range: {
       end: {
         character: 12,
-        line: 14
+        line: 15
       },
       start: {
         character: 11,
-        line: 14
+        line: 15
       }
     },
     severity: 1,
@@ -83,11 +88,86 @@ const expectedDiagnostics: LSP.Diagnostic[] = [
     range: {
       end: {
         character: 13,
-        line: 8
+        line: 9
       },
       start: {
         character: 11,
+        line: 9
+      }
+    },
+    severity: 1,
+    source: "MetaModelica-language-server"
+  },
+  {
+    message: "Missing else case.",
+    range: {
+      end: {
+        character: 15,
+        line: 6
+      },
+      start: {
+        character: 10,
+        line: 6
+      }
+    },
+    severity: 3,
+    source: "MetaModelica-language-server"
+  },
+  {
+    message: "Use 'algorithm' instead of 'equation' inside match cases.",
+    range: {
+      end: {
+        character: 24,
         line: 8
+      },
+      start: {
+        character: 16,
+        line: 8
+      }
+    },
+    severity: 3,
+    source: "MetaModelica-language-server"
+  },
+  {
+    message: "Use 'algorithm' instead of 'equation' inside match cases.",
+    range: {
+      end: {
+        character: 24,
+        line: 20
+      },
+      start: {
+        character: 16,
+        line: 20
+      }
+    },
+    severity: 3,
+    source: "MetaModelica-language-server"
+  },
+  {
+    message: "'matchcontinue' is inefficient, use 'match' and 'try-catch' instead.",
+    range: {
+      end: {
+        character: 23,
+        line: 19
+      },
+      start: {
+        character: 10,
+        line: 19
+      }
+    },
+    severity: 3,
+    source: "MetaModelica-language-server"
+  },
+  {
+    message: "Parse error: Start and end identifier don't match.\nReplace 'bar' with 'foo'.",
+    range: {
+      end: {
+        character: 7,
+        line: 24
+      },
+      start: {
+        character: 4,
+        line: 24
       }
     },
     severity: 1,
