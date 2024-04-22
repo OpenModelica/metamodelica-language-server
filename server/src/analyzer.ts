@@ -55,18 +55,28 @@ type AnalyzedDocument = {
 }
 
 export class MetaModelicaQueries {
-  public identifierQuery: Parser.Query;
-  public classTypeQuery: Parser.Query;
-  public errorQuery: Parser.Query;
-  public illegalEqualsQuery: Parser.Query;
-  public illegalAssignQuery: Parser.Query;
+  public identifier: Parser.Query;
+  public classType: Parser.Query;
+  public error: Parser.Query;
+  public illegalEquals: Parser.Query;
+  public illegalAssign: Parser.Query;
+  public modifierAssign: Parser.Query;
+  public caseEquation: Parser.Query;
+  public missingElseCaseMatch: Parser.Query;
+  public matchcontinue: Parser.Query;
+  public startEndIdent: Parser.Query;
 
   constructor(language: Parser.Language) {
-    this.identifierQuery = language.query('(IDENT) @identifier');
-    this.classTypeQuery = language.query('(class_type) @type');
-    this.errorQuery = language.query('(ERROR) @error');
-    this.illegalEqualsQuery = language.query('(assign_clause_a (simple_expression) (EQUALS) @error )');
-    this.illegalAssignQuery = language.query('[ ( equation (simple_expression) (ASSIGN) @error ) ( constraint (simple_expression) (ASSIGN) @error ) ]');
+    this.identifier = language.query('(IDENT) @identifier');
+    this.classType = language.query('(class_type) @type');
+    this.error = language.query('(ERROR) @error');
+    this.illegalEquals = language.query('(assign_clause_a (simple_expression) (EQUALS) @error )');
+    this.illegalAssign = language.query('[ ( equation (simple_expression) (ASSIGN) @error ) ( constraint (simple_expression) (ASSIGN) @error ) ]');
+    this.modifierAssign = language.query('(modification (ASSIGN) @warning)');
+    this.caseEquation = language.query('(onecase (EQUATION) @info)');
+    this.missingElseCaseMatch = language.query('(match_expression [(MATCH) (MATCHCONTINUE)] @info (cases case: (onecase)* case: (onecase) . ))');
+    this.matchcontinue = language.query('(match_expression . (MATCHCONTINUE) @info (expression) )');
+    this.startEndIdent = language.query('(class_specifier identifier: (identifier) @start endIdentifier: (identifier) @end )');
   }
 
   /**
@@ -76,7 +86,7 @@ export class MetaModelicaQueries {
    * @returns Identifier
    */
   public getIdentifier(node: Parser.SyntaxNode): string | undefined {
-    const captures = this.identifierQuery.captures(node);
+    const captures = this.identifier.captures(node);
     if (captures.length > 0) {
       return captures[0].node.text;
     } else {
@@ -91,7 +101,7 @@ export class MetaModelicaQueries {
    * @returns Class type
    */
   public getClassType(node: Parser.SyntaxNode): string | undefined {
-    const captures = this.classTypeQuery.captures(node);
+    const captures = this.classType.captures(node);
     if (captures.length > 0) {
       return captures[0].node.text;
     } else {
