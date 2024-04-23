@@ -1,0 +1,27 @@
+{
+  "name": "metamodelica-language-server-debugger",
+  "displayName": "MetaModelica Debugger",
+  "version": "0.1.0",
+  "description": "[Experimental] MetaModelica debugger.",
+  "author": "Andreas Heuermann",
+  "license": "See ../OSMC-License.txt",
+  "engines": {
+    "node": "20",
+    "vscode": "^1.75.0"
+  },
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OpenModelica/metamodelica-language-server"
+  },
+  "scripts": {},
+  "devDependencies": {
+    "@types/vscode": "^1.88.0",
+    "@vscode/debugadapter": "^1.65.0",
+    "@vscode/debugadapter-testsupport": "^1.65.0",
+    "await-notify": "^1.0.1",
+    "base64-js": "^1.5.1",
+    "events": "^3.3.0",
+    "path-browserify": "^1.0.1"
+  }
+}

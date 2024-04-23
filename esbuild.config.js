@@ -1,3 +1,5 @@
+/* eslint @typescript-eslint/no-var-requires: "off" */
+
 const esbuild = require('esbuild');
 const fs = require('fs');
 
@@ -29,6 +31,21 @@ esbuild.build({
   ],
   format: 'cjs',
   tsconfig: './server/tsconfig.json',
+}).catch(() => process.exit(1));
+
+// Build debugger
+esbuild.build({
+  entryPoints: [
+    './debugger/src/debugger.ts'
+  ],
+  bundle: true,
+  outfile: './out/debugger.js',
+  platform: 'node',
+  external: [
+    'vscode',
+  ],
+  format: 'cjs',
+  tsconfig: './debugger/tsconfig.json',
 }).catch(() => process.exit(1));
 
 // Copy tree-sitter.wasm and tree-sitter-metamodelica.wasm to the output directory

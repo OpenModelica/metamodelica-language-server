@@ -47,7 +47,7 @@ import { fstat } from 'fs';
 
 let client: LanguageClient;
 
-export function activate(context: ExtensionContext) {
+export async function activate(context: ExtensionContext) {
   // Register event listener to set language for '.mo' files.
   const checkedFiles: { [id: string]: boolean} = {};
   workspace.onDidOpenTextDocument((document: TextDocument) => {
@@ -56,7 +56,7 @@ export function activate(context: ExtensionContext) {
     }
 
     checkedFiles[document.fileName] = true;
-    if (getFileExtension(document) == '.mo') {
+    if (getFileExtension(document) === '.mo') {
       const lang = getLanguage(document);
 
       // TODO: Fix this mess!
@@ -75,6 +75,16 @@ export function activate(context: ExtensionContext) {
       */
     }
   });
+
+  // Activate Debugger
+  const debuggerModule = context.asAbsolutePath(
+    path.join('out', 'debugger.js')
+  );
+  if (!fs.existsSync(debuggerModule)) {
+    throw new Error(`Can't find debugger module in ${debuggerModule}`);
+  }
+  const metaModelicaDebugger = await import(debuggerModule);
+  metaModelicaDebugger.activate(context);
 
   // The server is implemented in node, point to packed module
   const serverModule = context.asAbsolutePath(

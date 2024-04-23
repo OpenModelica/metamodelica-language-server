@@ -36,6 +36,71 @@
         "type": "npm",
         "script": "test-compile"
       }
+    },
+    {
+      "name": "Debugger Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "${workspaceFolder}/sampleWorkspace"
+      ],
+      "outFiles": [
+        "${workspaceRoot}/out/**/*.js"
+      ],
+      "preLaunchTask": {
+        "type": "npm",
+        "script": "esbuild-watch"
+      }
+    },
+    {
+      "name": "Debugger Server",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "program": "${workspaceFolder}/out/debugger.ts",
+      "args": [
+        "--server=4711"
+      ],
+      "outFiles": [
+        "${workspaceRoot}/debugger/out/test/**/*.js"
+      ],
+      "preLaunchTask": {
+        "type": "npm",
+        "script": "esbuild-watch"
+      }
+    },
+    {
+      "name": "Debugger Tests",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "program": "${workspaceFolder}/node_modules/mocha/bin/_mocha",
+      "args": [
+        "-u",
+        "tdd",
+        "--timeout",
+        "999999",
+        "--colors",
+        "./out/tests/"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/out/**/*.js"
+      ],
+      "internalConsoleOptions": "openOnSessionStart",
+      "preLaunchTask": {
+        "type": "npm",
+        "script": "esbuild-watch"
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Extension + Server",
+      "configurations": [
+        "Debugger Extension",
+        "Debugger Server"
+      ]
     }
   ]
 }

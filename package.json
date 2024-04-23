@@ -26,7 +26,10 @@
     "vscode": "^1.75.0"
   },
   "activationEvents": [
-    "onLanguage:metamodelica"
+    "onLanguage:metamodelica",
+    "onDebugResolve:mock",
+    "onDebugDynamicConfigurations:mock",
+    "onCommand:extension.metamodelica-language-server.getProgramName"
   ],
   "main": "./out/client",
   "contributes": {
@@ -41,6 +44,171 @@
           ".mo"
         ]
       }
+    ],
+    "menus": {
+      "editor/title/run": [
+        {
+          "command": "extension.mock-debug.runEditorContents",
+          "when": "resourceLangId == metamodelica",
+          "group": "navigation@1"
+        },
+        {
+          "command": "extension.mock-debug.debugEditorContents",
+          "when": "resourceLangId == metamodelica",
+          "group": "navigation@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "extension.mock-debug.debugEditorContents",
+          "when": "resourceLangId == metamodelica"
+        },
+        {
+          "command": "extension.mock-debug.runEditorContents",
+          "when": "resourceLangId == metamodelica"
+        }
+      ],
+      "debug/variables/context": [
+        {
+          "command": "extension.mock-debug.toggleFormatting",
+          "when": "debugType == 'mock' && debugProtocolVariableMenuContext == 'simple'"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "extension.mock-debug.debugEditorContents",
+        "title": "Debug File",
+        "category": "Mock Debug",
+        "enablement": "!inDebugMode",
+        "icon": "$(debug-alt)"
+      },
+      {
+        "command": "extension.mock-debug.runEditorContents",
+        "title": "Run File",
+        "category": "Mock Debug",
+        "enablement": "!inDebugMode",
+        "icon": "$(play)"
+      },
+      {
+        "command": "extension.mock-debug.toggleFormatting",
+        "title": "Toggle between decimal and hex formatting"
+      }
+    ],
+    "breakpoints": [
+      {
+        "language": "metamodelica"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "mock",
+        "languages": [
+          "metamodelica"
+        ],
+        "label": "Mock Debug",
+        "program": "./out/debugger.js",
+        "runtime": "node",
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "program"
+            ],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "Absolute path to a text file.",
+                "default": "${workspaceFolder}/${command:AskForProgramName}"
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Automatically stop after launch.",
+                "default": true
+              },
+              "trace": {
+                "type": "boolean",
+                "description": "Enable logging of the Debug Adapter Protocol.",
+                "default": true
+              },
+              "compileError": {
+                "type": "string",
+                "description": "Simulates a compile error in 'launch' request.",
+                "enum": [
+                  "default",
+                  "show",
+                  "hide"
+                ],
+                "enumDescriptions": [
+                  "default: show fake compile error to user",
+                  "show fake compile error to user",
+                  "do not show fake compile error to user"
+                ]
+              }
+            }
+          },
+          "attach": {
+            "required": [
+              "program"
+            ],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "Absolute path to a text file.",
+                "default": "${workspaceFolder}/${command:AskForProgramName}"
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Automatically stop after attach.",
+                "default": true
+              },
+              "trace": {
+                "type": "boolean",
+                "description": "Enable logging of the Debug Adapter Protocol.",
+                "default": true
+              },
+              "compileError": {
+                "type": "string",
+                "description": "Simulates a compile error in 'attach' request.",
+                "enum": [
+                  "default",
+                  "show",
+                  "hide"
+                ],
+                "enumDescriptions": [
+                  "default: show fake compile error to user",
+                  "show fake compile error to user",
+                  "do not show fake compile error to user"
+                ]
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "mock",
+            "request": "launch",
+            "name": "Ask for file name",
+            "program": "${workspaceFolder}/${command:AskForProgramName}",
+            "stopOnEntry": true
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "Mock Debug: Launch",
+            "description": "A new configuration for 'debugging' a user selected metamodelica file.",
+            "body": {
+              "type": "mock",
+              "request": "launch",
+              "name": "Ask for file name",
+              "program": "^\"\\${workspaceFolder}/\\${command:AskForProgramName}\"",
+              "stopOnEntry": true
+            }
+          }
+        ],
+        "variables": {
+          "AskForProgramName": "extension.mock-debug.getProgramName"
+        }
+      }
     ]
   },
   "scripts": {
@@ -49,11 +217,12 @@
     "esbuild": "npm run esbuild-base -- --sourcemap",
     "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
     "test-compile": "tsc -b ./",
-    "lint": "eslint ./client/src ./server/src --ext .ts,.tsx",
-    "postinstall": "cd client && npm install && cd ../server && npm install && cd ..",
+    "lint": "eslint ./client/src ./server/src ./debugger/src --ext .ts,.tsx",
+    "postinstall": "cd client && npm install && cd ../server && npm install && cd ../debugger && npm install && cd ..",
     "test": "npm run test-compile && sh ./scripts/e2e.sh",
     "test:server": "cd server && npx mocha -r ts-node/register src/test/**/*.test.ts src/util/test/**/*.test.ts",
-    "all": "npm run postinstall && npm run esbuild && npm run lint && npm run test:server && npm run test && npm run vscode:prepublish"
+    "test:debugger": "cd debugger && npx mocha -r ts-node/register src/test/**/*.test.ts",
+    "all": "npm run postinstall && npm run esbuild && npm run lint && npm run test:server && npm run test:debugger && npm run test && npm run vscode:prepublish"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.6",

@@ -78,6 +78,12 @@ Found a bug or having issues? Open a
 
 ## Building the Language Server
 
+### Dependencies
+
+  - Docker installed and running.
+
+### Quick install
+
   - Run `npm install` and `npm run postinstall` in this folder.This installs all
     necessary npm modules in both the client and server folder
   - Open VS Code on this folder.
@@ -112,6 +118,8 @@ licensed under MIT license.
 Some parts of the source code are taken from
 [bash-lsp/bash-language-server](https://github.com/bash-lsp/bash-language-server),
 licensed under the MIT license and adapted to the MetaModelica language server.
+
+The debugger is based on [microsoft/vscode-mock-debug](https://github.com/microsoft/vscode-mock-debug) licensed under MIT.
 
 [OpenModelica/tree-sitter-metamodelica](https://github.com/OpenModelica/tree-sitter-metamodelica)
 v0.2.0 is included in this extension and is licensed under the [OSMC-PL
