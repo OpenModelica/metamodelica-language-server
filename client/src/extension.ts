@@ -46,8 +46,20 @@ import { getFileExtension, getLanguage } from './getLanguage';
 import { fstat } from 'fs';
 
 let client: LanguageClient;
+let metaModelicaDebugger: any;
 
 export async function activate(context: ExtensionContext) {
+
+  // Activate Debugger
+  const debuggerModule = context.asAbsolutePath(
+    path.join('out', 'debugger.js')
+  );
+  if (!fs.existsSync(debuggerModule)) {
+    throw new Error(`Can't find debugger module in ${debuggerModule}`);
+  }
+  metaModelicaDebugger = await import(debuggerModule);
+  metaModelicaDebugger.activate(context);
+
   // Register event listener to set language for '.mo' files.
   const checkedFiles: { [id: string]: boolean} = {};
   workspace.onDidOpenTextDocument((document: TextDocument) => {
@@ -75,16 +87,6 @@ export async function activate(context: ExtensionContext) {
       */
     }
   });
-
-  // Activate Debugger
-  const debuggerModule = context.asAbsolutePath(
-    path.join('out', 'debugger.js')
-  );
-  if (!fs.existsSync(debuggerModule)) {
-    throw new Error(`Can't find debugger module in ${debuggerModule}`);
-  }
-  const metaModelicaDebugger = await import(debuggerModule);
-  metaModelicaDebugger.activate(context);
 
   // The server is implemented in node, point to packed module
   const serverModule = context.asAbsolutePath(
@@ -134,6 +136,9 @@ export async function activate(context: ExtensionContext) {
 export function deactivate(): Thenable<void> | undefined {
   if (!client) {
     return undefined;
+  }
+  if (metaModelicaDebugger) {
+    metaModelicaDebugger.deactivate();
   }
   return client.stop();
 }

@@ -2,28 +2,28 @@
  * Copyright (C) Microsoft Corporation. All rights reserved.
  *--------------------------------------------------------*/
 /*
- * activateMockDebug.ts containes the shared extension code that can be executed both in node.js and the browser.
+ * activateMockDebug.ts contains the shared extension code that can be executed both in node.js and the browser.
  */
 
 'use strict';
 
 import * as vscode from 'vscode';
 import { WorkspaceFolder, DebugConfiguration, ProviderResult, CancellationToken } from 'vscode';
-import { MockDebugSession } from './mockDebug';
+import { MetaModelicaDebugSession } from './metaModelicaDebug';
 import { FileAccessor } from './mockRuntime';
 
-export function activateMockDebug(context: vscode.ExtensionContext, factory?: vscode.DebugAdapterDescriptorFactory) {
+export function activateMetaModelicaDebug(context: vscode.ExtensionContext, factory?: vscode.DebugAdapterDescriptorFactory) {
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('extension.mock-debug.runEditorContents', (resource: vscode.Uri) => {
+    vscode.commands.registerCommand('extension.metamodelica-language-server.runEditorContents', (resource: vscode.Uri) => {
       let targetResource = resource;
       if (!targetResource && vscode.window.activeTextEditor) {
         targetResource = vscode.window.activeTextEditor.document.uri;
       }
       if (targetResource) {
         vscode.debug.startDebugging(undefined, {
-          type: 'mock',
-          name: 'Run File',
+          type: 'metamodelica-dbg',
+          name: 'Run Script',
           request: 'launch',
           program: targetResource.fsPath
         },
@@ -31,22 +31,23 @@ export function activateMockDebug(context: vscode.ExtensionContext, factory?: vs
         );
       }
     }),
-    vscode.commands.registerCommand('extension.mock-debug.debugEditorContents', (resource: vscode.Uri) => {
+    vscode.commands.registerCommand('extension.metamodelica-language-server.debugEditorContents', (resource: vscode.Uri) => {
       let targetResource = resource;
       if (!targetResource && vscode.window.activeTextEditor) {
         targetResource = vscode.window.activeTextEditor.document.uri;
       }
       if (targetResource) {
         vscode.debug.startDebugging(undefined, {
-          type: 'mock',
-          name: 'Debug File',
+          type: 'metamodelica-dbg',
+          name: 'Debug Script',
           request: 'launch',
           program: targetResource.fsPath,
           stopOnEntry: true
         });
       }
     }),
-    vscode.commands.registerCommand('extension.mock-debug.toggleFormatting', (variable) => {
+    // TODO AHeu: What is this doing?
+    vscode.commands.registerCommand('extension.metamodelica-language-server.toggleFormatting', (variable) => {
       const ds = vscode.debug.activeDebugSession;
       if (ds) {
         ds.customRequest('toggleFormatting');
@@ -54,37 +55,30 @@ export function activateMockDebug(context: vscode.ExtensionContext, factory?: vs
     })
   );
 
-  context.subscriptions.push(vscode.commands.registerCommand('extension.mock-debug.getProgramName', config => {
-    return vscode.window.showInputBox({
-      placeHolder: "Please enter the name of a markdown file in the workspace folder",
-      value: "readme.md"
-    });
-  }));
+  // register a configuration provider for 'metamodelica' debug type
+  const provider = new MetaModelicaConfigurationProvider();
+  context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('metamodelica', provider));
 
-  // register a configuration provider for 'mock' debug type
-  const provider = new MockConfigurationProvider();
-  context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('mock', provider));
-
-  // register a dynamic configuration provider for 'mock' debug type
-  context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('mock', {
+  // register a dynamic configuration provider for 'metamodelica' debug type
+  context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('metamodelica', {
     provideDebugConfigurations(folder: WorkspaceFolder | undefined): ProviderResult<DebugConfiguration[]> {
       return [
         {
           name: "Dynamic Launch",
           request: "launch",
-          type: "mock",
+          type: "metamodelica-dbg",
           program: "${file}"
         },
         {
           name: "Another Dynamic Launch",
           request: "launch",
-          type: "mock",
+          type: "metamodelica-dbg",
           program: "${file}"
         },
         {
           name: "Mock Launch",
           request: "launch",
-          type: "mock",
+          type: "metamodelica-dbg",
           program: "${file}"
         }
       ];
@@ -94,14 +88,14 @@ export function activateMockDebug(context: vscode.ExtensionContext, factory?: vs
   if (!factory) {
     factory = new InlineDebugAdapterFactory();
   }
-  context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory('mock', factory));
+  context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory('metamodelica-dbg', factory));
   if ('dispose' in factory) {
     context.subscriptions.push(factory as any);
   }
 
   // override VS Code's default implementation of the debug hover
   // here we match only Mock "variables", that are words starting with an '$'
-  context.subscriptions.push(vscode.languages.registerEvaluatableExpressionProvider('markdown', {
+  context.subscriptions.push(vscode.languages.registerEvaluatableExpressionProvider('metamodelica-dbg', {
     provideEvaluatableExpression(document: vscode.TextDocument, position: vscode.Position): vscode.ProviderResult<vscode.EvaluatableExpression> {
 
       const VARIABLE_REGEXP = /\$[a-z][a-z0-9]*/ig;
@@ -122,7 +116,7 @@ export function activateMockDebug(context: vscode.ExtensionContext, factory?: vs
   }));
 
   // override VS Code's default implementation of the "inline values" feature"
-  context.subscriptions.push(vscode.languages.registerInlineValuesProvider('markdown', {
+  context.subscriptions.push(vscode.languages.registerInlineValuesProvider('metamodelica-dbg', {
 
     provideInlineValues(document: vscode.TextDocument, viewport: vscode.Range, context: vscode.InlineValueContext) : vscode.ProviderResult<vscode.InlineValue[]> {
 
@@ -155,7 +149,7 @@ export function activateMockDebug(context: vscode.ExtensionContext, factory?: vs
   }));
 }
 
-class MockConfigurationProvider implements vscode.DebugConfigurationProvider {
+class MetaModelicaConfigurationProvider implements vscode.DebugConfigurationProvider {
 
   /**
    * Massage a debug configuration just before a debug session is being launched,
@@ -166,17 +160,19 @@ class MockConfigurationProvider implements vscode.DebugConfigurationProvider {
     // if launch.json is missing or empty
     if (!config.type && !config.request && !config.name) {
       const editor = vscode.window.activeTextEditor;
-      if (editor && editor.document.languageId === 'markdown') {
-        config.type = 'mock';
-        config.name = 'Launch';
+      if (editor && editor.document.languageId === 'openmodelica-scripting') {
+        config.type = 'metamodelica-dbg';
+        config.name = '(omc) Launch';
         config.request = 'launch';
-        config.program = '${file}';
-        config.stopOnEntry = true;
+        config.program = 'omc';
+        config.stopOnEntry = false;
+        config.gdb = 'gdb';
+        config.mosFile = '${file}';
       }
     }
 
     if (!config.program) {
-      return vscode.window.showInformationMessage("Cannot find a program to debug").then(_ => {
+      return vscode.window.showInformationMessage("Path to OpenModelica Compiler not specified").then(_ => {
         return undefined;  // abort launch
       });
     }
@@ -213,6 +209,6 @@ function pathToUri(path: string) {
 class InlineDebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory {
 
   createDebugAdapterDescriptor(_session: vscode.DebugSession): ProviderResult<vscode.DebugAdapterDescriptor> {
-    return new vscode.DebugAdapterInlineImplementation(new MockDebugSession(workspaceFileAccessor));
+    return new vscode.DebugAdapterInlineImplementation(new MetaModelicaDebugSession(workspaceFileAccessor));
   }
 }

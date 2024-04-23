@@ -45,7 +45,7 @@ interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
 interface IAttachRequestArguments extends ILaunchRequestArguments { }
 
 
-export class MockDebugSession extends LoggingDebugSession {
+export class MetaModelicaDebugSession extends LoggingDebugSession {
 
   // we don't support multiple threads, so we can use a hardcoded ID for the default thread
   private static threadID = 1;
@@ -84,25 +84,25 @@ export class MockDebugSession extends LoggingDebugSession {
 
     // setup event handlers
     this._runtime.on('stopOnEntry', () => {
-      this.sendEvent(new StoppedEvent('entry', MockDebugSession.threadID));
+      this.sendEvent(new StoppedEvent('entry', MetaModelicaDebugSession.threadID));
     });
     this._runtime.on('stopOnStep', () => {
-      this.sendEvent(new StoppedEvent('step', MockDebugSession.threadID));
+      this.sendEvent(new StoppedEvent('step', MetaModelicaDebugSession.threadID));
     });
     this._runtime.on('stopOnBreakpoint', () => {
-      this.sendEvent(new StoppedEvent('breakpoint', MockDebugSession.threadID));
+      this.sendEvent(new StoppedEvent('breakpoint', MetaModelicaDebugSession.threadID));
     });
     this._runtime.on('stopOnDataBreakpoint', () => {
-      this.sendEvent(new StoppedEvent('data breakpoint', MockDebugSession.threadID));
+      this.sendEvent(new StoppedEvent('data breakpoint', MetaModelicaDebugSession.threadID));
     });
     this._runtime.on('stopOnInstructionBreakpoint', () => {
-      this.sendEvent(new StoppedEvent('instruction breakpoint', MockDebugSession.threadID));
+      this.sendEvent(new StoppedEvent('instruction breakpoint', MetaModelicaDebugSession.threadID));
     });
     this._runtime.on('stopOnException', (exception) => {
       if (exception) {
-        this.sendEvent(new StoppedEvent(`exception(${exception})`, MockDebugSession.threadID));
+        this.sendEvent(new StoppedEvent(`exception(${exception})`, MetaModelicaDebugSession.threadID));
       } else {
-        this.sendEvent(new StoppedEvent('exception', MockDebugSession.threadID));
+        this.sendEvent(new StoppedEvent('exception', MetaModelicaDebugSession.threadID));
       }
     });
     this._runtime.on('breakpointValidated', (bp: IRuntimeBreakpoint) => {
@@ -366,8 +366,8 @@ export class MockDebugSession extends LoggingDebugSession {
     // runtime supports no threads so just return a default thread.
     response.body = {
       threads: [
-        new Thread(MockDebugSession.threadID, "thread 1"),
-        new Thread(MockDebugSession.threadID + 1, "thread 2"),
+        new Thread(MetaModelicaDebugSession.threadID, "thread 1"),
+        new Thread(MetaModelicaDebugSession.threadID + 1, "thread 2"),
       ]
     };
     this.sendResponse(response);

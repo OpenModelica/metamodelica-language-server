@@ -2,7 +2,7 @@
  * Copyright (C) Microsoft Corporation. All rights reserved.
  *--------------------------------------------------------*/
 
-import { MockDebugSession } from './mockDebug';
+import { MetaModelicaDebugSession } from './metaModelicaDebug';
 
 import { promises as fs } from 'fs';
 import * as Net from 'net';
@@ -55,14 +55,14 @@ if (port > 0) {
     socket.on('end', () => {
       console.error('>> client connection closed\n');
     });
-    const session = new MockDebugSession(fsAccessor);
+    const session = new MetaModelicaDebugSession(fsAccessor);
     session.setRunAsServer(true);
     session.start(socket, socket);
   }).listen(port);
 } else {
 
   // start a single session that communicates via stdin/stdout
-  const session = new MockDebugSession(fsAccessor);
+  const session = new MetaModelicaDebugSession(fsAccessor);
   process.on('SIGTERM', () => {
     session.shutdown();
   });
