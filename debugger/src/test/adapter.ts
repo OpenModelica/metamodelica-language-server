@@ -3,14 +3,14 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import assert = require('assert');
+import * as assert from 'assert';
 import * as Path from 'path';
 import {DebugClient} from '@vscode/debugadapter-testsupport';
 import {DebugProtocol} from '@vscode/debugprotocol';
 
-suite('Node Debug Adapter', () => {
+describe('Node Debug Adapter', () => {
 
-  const DEBUG_ADAPTER = './out/debugAdapter.js';
+  const DEBUG_ADAPTER = '../out/debugger.js';
 
   const PROJECT_ROOT = Path.join(__dirname, '../../');
   const DATA_ROOT = Path.join(PROJECT_ROOT, 'src/tests/data/');
@@ -18,17 +18,17 @@ suite('Node Debug Adapter', () => {
 
   let dc: DebugClient;
 
-  setup( () => {
-    dc = new DebugClient('node', DEBUG_ADAPTER, 'mock');
+  before(() => {
+    dc = new DebugClient('node', DEBUG_ADAPTER, 'metamodelica');
     return dc.start();
   });
 
-  teardown( () => dc.stop() );
+  after( () => dc.stop() );
 
 
-  suite('basic', () => {
+  describe('basic', () => {
 
-    test('unknown request should produce error', done => {
+    it('unknown request should produce error', done => {
       dc.send('illegal_request').then(() => {
         done(new Error("does not report error on unknown request"));
       }).catch(() => {
@@ -37,16 +37,16 @@ suite('Node Debug Adapter', () => {
     });
   });
 
-  suite('initialize', () => {
+  describe('initialize', () => {
 
-    test('should return supported features', () => {
+    it('should return supported features', () => {
       return dc.initializeRequest().then(response => {
         response.body = response.body || {};
         assert.equal(response.body.supportsConfigurationDoneRequest, true);
       });
     });
 
-    test('should produce error for invalid \'pathFormat\'', done => {
+    it('should produce error for invalid \'pathFormat\'', done => {
       dc.initializeRequest({
         adapterID: 'mock',
         linesStartAt1: true,
@@ -61,11 +61,11 @@ suite('Node Debug Adapter', () => {
     });
   });
 
-  suite('launch', () => {
+  describe('launch', () => {
 
-    test('should run program to the end', () => {
+    it('should run program to the end', () => {
 
-      const PROGRAM = Path.join(DATA_ROOT, 'test.md');
+      const PROGRAM = Path.join(DATA_ROOT, 'test.mo');
 
       return Promise.all([
         dc.configurationSequence(),
@@ -74,9 +74,9 @@ suite('Node Debug Adapter', () => {
       ]);
     });
 
-    test('should stop on entry', () => {
+    it('should stop on entry', () => {
 
-      const PROGRAM = Path.join(DATA_ROOT, 'test.md');
+      const PROGRAM = Path.join(DATA_ROOT, 'test.mo');
       const ENTRY_LINE = 1;
 
       return Promise.all([
@@ -87,19 +87,19 @@ suite('Node Debug Adapter', () => {
     });
   });
 
-  suite('setBreakpoints', () => {
+  describe('setBreakpoints', () => {
 
-    test('should stop on a breakpoint', () => {
+    it('should stop on a breakpoint', () => {
 
-      const PROGRAM = Path.join(DATA_ROOT, 'test.md');
+      const PROGRAM = Path.join(DATA_ROOT, 'test.mo');
       const BREAKPOINT_LINE = 2;
 
       return dc.hitBreakpoint({ program: PROGRAM }, { path: PROGRAM, line: BREAKPOINT_LINE } );
     });
 
-    test('hitting a lazy breakpoint should send a breakpoint event', () => {
+    it('hitting a lazy breakpoint should send a breakpoint event', () => {
 
-      const PROGRAM = Path.join(DATA_ROOT, 'testLazyBreakpoint.md');
+      const PROGRAM = Path.join(DATA_ROOT, 'testLazyBreakpoint.mo');
       const BREAKPOINT_LINE = 3;
 
       return Promise.all([
@@ -114,11 +114,11 @@ suite('Node Debug Adapter', () => {
     });
   });
 
-  suite('setExceptionBreakpoints', () => {
+  describe('setExceptionBreakpoints', () => {
 
-    test('should stop on an exception', () => {
+    it('should stop on an exception', () => {
 
-      const PROGRAM_WITH_EXCEPTION = Path.join(DATA_ROOT, 'testWithException.md');
+      const PROGRAM_WITH_EXCEPTION = Path.join(DATA_ROOT, 'testWithException.mo');
       const EXCEPTION_LINE = 4;
 
       return Promise.all([

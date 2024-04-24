@@ -52,7 +52,7 @@ type AnalyzedDocument = {
   document: TextDocument,
   declarations: LSP.DocumentSymbol[],
   tree: Parser.Tree
-}
+};
 
 export class MetaModelicaQueries {
   public identifier: Parser.Query;
