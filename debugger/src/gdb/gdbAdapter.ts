@@ -36,6 +36,31 @@
 import { ChildProcess, spawn } from 'child_process';
 import { existsSync } from 'fs';
 
+import { logger } from '../util/logger';
+
+export enum GDBCommandFlag {
+  noFlags             = 0,
+  consoleCommand      = 1 << 0,  // This is a command that needs to be wrapped into -interpreter-exec console
+  nonCriticalResponse = 1 << 1,
+  silentCommand       = 1 << 2,  // Ignore the error of this command
+  blockUntilResponse  = 1 << 3   // Blocks until the command has received the answer
+}
+
+class GDBMICommand {
+  mFlags: GDBCommandFlag;
+  mCommand: string;
+  mCompleted: boolean = false;
+
+  constructor(flags: GDBCommandFlag, command: string) {
+    this.mFlags = flags;
+    this.mCommand = command;
+
+    if ( (flags & GDBCommandFlag.consoleCommand) === GDBCommandFlag.consoleCommand ) {
+      this.mCommand = `-interpreter-exec console "${this.mCommand}"`;
+    }
+  }
+}
+
 export class GDBAdapter {
   private mpGDBProcess: ChildProcess | null = null;
   private mGDBProgram: string = '';
@@ -43,6 +68,10 @@ export class GDBAdapter {
   //private mInferiorArguments: string[] = [];
   private gdbKilled: boolean = true;
   private gdbStarted: boolean = false;
+  private acceptingCommand: boolean = false;
+
+  private token: number = 0;
+  private mGDBMICommandsHash: { [token: number]: GDBMICommand } = {};
 
   /**
    * Launch GDB child process with default arguments.
@@ -60,7 +89,7 @@ export class GDBAdapter {
   {
     // Check if the program to debug exists
     if (!existsSync(program)) {
-      throw new Error(`The executable to debug does not exist: ${program}`);
+      throw new Error(`GDB: The executable to debug does not exist: ${program}`);
     }
 
     /* launch gdb with the default arguments
@@ -77,92 +106,131 @@ export class GDBAdapter {
         cwd: workingDirectory
       });
       if (!this.mpGDBProcess) {
-        throw new Error("Error: Failed to spawn gdb process.");
+        throw new Error("GDB: Failed to spawn gdb process.");
       }
       //this.mInferiorArguments = _programArgs;
       this.gdbKilled = false;
 
       this.mpGDBProcess.on('error', (err) => {
-        console.error('Error occurred in GDB process:', err);
+        logger.error('GDB: Error occurred in process:', err);
       });
 
       this.mpGDBProcess.stdout!.on('data', (data) => {
-        // Handle GDB standard output
-        console.log(data.toString());
+        const stringData = data.toString();
+        logger.debug(stringData);
+        // Check if the response is complete
+        if (stringData.trim().endsWith('(gdb)')) {
+          logger.info('GDB: Finished startup.');
+          this.acceptingCommand = true;
+          this.gdbStarted = true;
+          // Remove the 'data' event listeners once the 'launch' promise is resolved
+          this.mpGDBProcess!.stdout!.removeAllListeners('data');
+          resolve();
+        }
       });
 
       this.mpGDBProcess.stderr!.on('data', (data) => {
-        // Handle GDB error output
-        console.error(data.toString());
+        reject(new Error(`Error from GDB: ${data.toString()}`));
       });
 
-      this.mpGDBProcess.on('spawn', () => {
-        console.log('GDB process started.');
+      this.mpGDBProcess.once('spawn', () => {
+        logger.info('GDB: Process started.');
         this.gdbStarted = true;
-        resolve(); // Resolve the promise once the GDB process is spawned
       });
 
-      this.mpGDBProcess.on('exit', (code, signal) => {
-        console.log(`GDB process exited with code ${code} and signal ${signal}`);
+      this.mpGDBProcess.once('exit', (code, signal) => {
+        logger.info(`GDB: Process exited with code ${code} and signal ${signal}`);
         this.gdbStarted = false;
-        // Handle GDB process exit
+        this.gdbKilled = true;
       });
-
-      // TODO: Handle simulation options
-
-      // TODO: Start gdb with arguments
-      // TODO: Wait for this.mpGDBProcess to have started
     });
   }
 
   /**
    * Kill GDB process.
    */
-  public kill() {
-    if (this.gdbKilled || !this.mpGDBProcess) {
-      return;
-    }
-    if (!this.mpGDBProcess.kill()) {
-      throw new Error(`Failed to kill GDB child process ${this.mpGDBProcess.pid}`);
-    }
-    this.gdbKilled = true;
-    this.gdbStarted = false;
+  public kill(): Promise<void> {
+
+    return new Promise<void>((resolve, reject) => {
+      if (!this.mpGDBProcess || this.gdbKilled) {
+        reject(new Error('GDB process is not running.'));
+        return;
+      }
+
+      // Resolve the promise when the process exits
+      this.mpGDBProcess.once('exit', () => {
+        this.gdbKilled = true;
+        this.gdbStarted = false;
+        resolve();
+      });
+
+      // Kill the process
+      this.mpGDBProcess.kill();
+    });
   }
 
   public isGDBRunning(): boolean {
-    return this.gdbStarted;
+    return this.gdbStarted && this.acceptingCommand;
   }
 
-  /*
+  /**
+   * Send command to GDB.
+   *
+   * Resolves when response ends with "(gdb)".
+   *
+   * @param command   GDB command.
+   * @param flags     Command flags.
+   * @returns         Promise response data as string.
+   */
+  public sendCommand(
+    command: string,
+    flags: GDBCommandFlag): Promise<string>
+  {
+    return new Promise<string>((resolve, reject) => {
+      if ( !this.isGDBRunning() || !this.mpGDBProcess ) {
+        reject(new Error(`GDB: Not running.`));
+        return;
+      }
 
-  handleGDBProcessStarted(): void {
-    // Handle GDB process started event
-  }
+      this.token += 1;
+      const cmd = new GDBMICommand(flags, command);
 
-  readGDBStandardOutput(): void {
-    // Handle GDB standard output
-  }
+      //cmd.mCommand = `${this.token}${cmd.mCommand}`;
+      this.mGDBMICommandsHash[this.token] = cmd;
 
-  readGDBErrorOutput(): void {
-    // Handle GDB error output
-  }
+      // Log command
+      logger.info(`GDB: Run command "${cmd.mCommand}"`);
+      // TODO: Add logger
+      //this.writeDebuggerCommandLog(cmd.mCommand);
 
-  handleGDBProcessError(error: Error): void {
-    console.error('Error occurred in GDB process:', error);
-  }
+      // Resolve when GDB sends "(gdb)" and is ready to accept commands.
+      let responseData = '';
+      let counter = 0;
+      this.mpGDBProcess.stdout!.on('data', (data) => {
+        const stringData = data.toString();
+        responseData += stringData;
+        logger.debug(stringData);
+        // Check if the response is complete
+        if (stringData.trim().endsWith('(gdb)')) {
+          counter++;
+        }
+        // For whatever reason there are two (gdb) when running a command.
+        if (counter >= 2) {
+          // Remove the 'data' event listeners once the 'launch' promise is resolved
+          logger.info(`GDB: Finished command "${cmd.mCommand}"`);
+          this.mpGDBProcess!.stdout!.removeAllListeners('data');
+          resolve(responseData);
+        }
+      });
 
-  handleGDBProcessFinished(code: number): void {
-    console.log('GDB process finished with code:', code);
-    // Handle GDB process finished event
-  }
+      this.mpGDBProcess.stdin!.write(`${cmd.mCommand}\r\n`);
 
-  handleGDBProcessStartedForSimulation(): void {
-    // Handle GDB process started event for simulation
-  }
+      // TODO: When does it end on '-gdb-exit'?
+      //if (!cmd.mCommand.endsWith('-gdb-exit')) {
+      //  this.mGDBCommandTimer.start();
+      //}
+    });
 
-  handleGDBProcessFinishedForSimulation(code: number): void {
-    console.log('GDB process finished for simulation with code:', code);
-    // Handle GDB process finished event for simulation
+
   }
-  */
 }

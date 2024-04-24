@@ -45,7 +45,9 @@ import * as TreeSitterUtil from './tree-sitter';
 import { logger } from './logger';
 import { MetaModelicaQueries } from './../analyzer';
 
-const isEmpty = (data: string): boolean => typeof data === "string" && data.trim().length == 0;
+const isEmpty = (data: string): boolean => {
+  return typeof data === "string" && data.trim().length === 0;
+};
 
 /**
  * Returns all class declarations from a given tree.

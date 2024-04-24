@@ -57,8 +57,8 @@ export async function initializeParser(): Promise<Parser> {
     throw new Error(`Can't find 'tree-sitter-metamodelica.wasm' at ${metamodelicaWasmFile}`);
   }
 
-  const MetaModelica = await Parser.Language.load(metamodelicaWasmFile);
-  parser.setLanguage(MetaModelica);
+  const metaModelica = await Parser.Language.load(metamodelicaWasmFile);
+  parser.setLanguage(metaModelica);
 
   return parser;
 }
