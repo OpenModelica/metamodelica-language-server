@@ -37,6 +37,7 @@ import * as assert from 'assert';
 import { exec } from 'child_process';
 
 import { GDBAdapter, GDBCommandFlag } from '../gdb/gdbAdapter';
+import * as CommandFactory from '../gdb/commandFactory';
 import { setLogLevel } from '../util/logger';
 
 async function which(programName: string): Promise<string> {
@@ -60,23 +61,31 @@ async function which(programName: string): Promise<string> {
   });
 }
 
-describe('Run GDB as child process', () => {
+describe('GDBAdapter', () => {
+  let adapter: GDBAdapter;
+
+  afterEach(async () => {
+    if (adapter) {
+      await adapter.quit();
+    }
+  });
+
   it('Start and stop GDBAdapter', async () => {
     setLogLevel('info');
 
-    const adapter = new GDBAdapter();
+    adapter = new GDBAdapter();
     const omcExecutable = await which('omc');
     const gdbExecutable = await which('gdb');
 
     await adapter.launch(omcExecutable, __dirname, [], gdbExecutable);
     assert(adapter.isGDBRunning(), "Assert GDB is running.");
-    await adapter.kill();
+    await adapter.quit();
     assert(!adapter.isGDBRunning(), "Assert GDB is not running any more.");
   }).timeout("2s");
 
-  it('Run omc --version from GDBAdapter', async () => {
-    setLogLevel('info');
-    const adapter = new GDBAdapter();
+  it('Run gdb omc with "r --version"', async () => {
+    setLogLevel('debug');
+    adapter = new GDBAdapter();
     const omcExecutable = await which('omc');
     const gdbExecutable = await which('gdb');
 
@@ -84,13 +93,26 @@ describe('Run GDB as child process', () => {
     assert(adapter.isGDBRunning(), "Assert GDB is running.");
 
     const flags = GDBCommandFlag.noFlags;
-    const response = await adapter.sendCommand("r --version", flags);
+    await adapter.sendCommand(CommandFactory.gdbSet("args --version"), flags);
+    const response = await adapter.sendCommand(CommandFactory.execRun(), flags);
     // Check version string is in response and gdb did exit normally.
     assert.match(response, /v[0-9]+.[0-9]+.[0-9](?:-dev)/);
     assert.ok(response.includes('stopped,reason="exited-normally"'));
 
-    await adapter.kill();
+    await adapter.quit();
     assert(!adapter.isGDBRunning(), "Assert GDB is not running any more.");
+  }).timeout("10s");
 
-  }).timeout("5s");
+  it('handleGDBProcessStartedHelper', async () => {
+    setLogLevel('debug');
+    adapter = new GDBAdapter();
+    const omcExecutable = await which('omc');
+    const gdbExecutable = await which('gdb');
+
+    await adapter.launch(omcExecutable, __dirname, [], gdbExecutable);
+    assert(adapter.isGDBRunning(), "Assert GDB is running.");
+
+    await adapter.quit();
+    assert(!adapter.isGDBRunning(), "Assert GDB is not running any more.");
+  }).timeout("10s");
 });

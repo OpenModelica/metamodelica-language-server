@@ -34,8 +34,10 @@
  */
 
 import { ChildProcess, spawn } from 'child_process';
+import { EventEmitter } from 'events';
 import { existsSync } from 'fs';
 
+import * as CommandFactory from './commandFactory';
 import { logger } from '../util/logger';
 
 export enum GDBCommandFlag {
@@ -61,54 +63,66 @@ class GDBMICommand {
   }
 }
 
-export class GDBAdapter {
+export class GDBAdapter extends EventEmitter {
   private mpGDBProcess: ChildProcess | null = null;
   private mGDBProgram: string = '';
   private mGDBArguments: string[] = [];
-  //private mInferiorArguments: string[] = [];
+  private mInferiorArguments: string[] = [];
+
+  // TODO: Make this a state machine thingy instead of bazillion booleans.
   private gdbKilled: boolean = true;
   private gdbStarted: boolean = false;
-  private acceptingCommand: boolean = false;
+  private isRunning: boolean = false;
 
-  private token: number = 0;
-  private mGDBMICommandsHash: { [token: number]: GDBMICommand } = {};
+  private mStandardOutputBuffer: string = "";
+
+  /**
+   * Event handler on GDB response completed
+   */
+  public onComplete?: () => void;
+  public exited?: () => void;
+
+  constructor() {
+    super();
+  }
 
   /**
    * Launch GDB child process with default arguments.
    *
    * @param program           The program to debug with GDB.
    * @param workingDirectory  Working directory for GDB.
-   * @param _programArgs       Program arguments
+   * @param programArgs       Program arguments
    * @param gdbPath           Path to GDB executable.
    */
-  public launch(
+  public async launch(
     program: string,
     workingDirectory: string,
-    _programArgs: string[],
+    programArgs: string[],
     gdbPath: string): Promise<void>
   {
-    // Check if the program to debug exists
-    if (!existsSync(program)) {
-      throw new Error(`GDB: The executable to debug does not exist: ${program}`);
-    }
-
-    /* launch gdb with the default arguments
-    * -q  quiet mode. Don't print welcome messages
-    * -nw don't use window interface
-    * -i  select interface
-    * mi  machine interface
-    */
-    this.mGDBProgram = gdbPath;
-    this.mGDBArguments = ['-q', '-nw', '-i', 'mi', '--args', program];
-
     return new Promise<void>((resolve, reject) => {
+      // Check if the program to debug exists
+      if (!existsSync(program)) {
+        reject(new Error(`GDB: The executable to debug does not exist: ${program}`));
+        return;
+      }
+
+      /* launch gdb with the default arguments
+      * -q  quiet mode. Don't print welcome messages
+      * -nw don't use window interface
+      * -i  select interface
+      * mi  machine interface
+      */
+      this.mGDBProgram = gdbPath;
+      this.mGDBArguments = ['-q', '-nw', '-i', 'mi', '--args', program];
       this.mpGDBProcess = spawn(this.mGDBProgram, this.mGDBArguments, {
         cwd: workingDirectory
       });
       if (!this.mpGDBProcess) {
-        throw new Error("GDB: Failed to spawn gdb process.");
+        reject(new Error("GDB: Failed to spawn gdb process."));
+        return;
       }
-      //this.mInferiorArguments = _programArgs;
+      this.mInferiorArguments = programArgs;
       this.gdbKilled = false;
 
       this.mpGDBProcess.on('error', (err) => {
@@ -116,19 +130,29 @@ export class GDBAdapter {
       });
 
       this.mpGDBProcess.stdout!.on('data', (data) => {
-        const stringData = data.toString();
-        logger.debug(stringData);
-        // Check if the response is complete
-        if (stringData.trim().endsWith('(gdb)')) {
-          logger.info('GDB: Finished startup.');
-          this.acceptingCommand = true;
-          this.gdbStarted = true;
-          // Remove the 'data' event listeners once the 'launch' promise is resolved
-          this.mpGDBProcess!.stdout!.removeAllListeners('data');
-          resolve();
+        this.mStandardOutputBuffer += data.toString();
+
+        if (this.responseCompleted(data.toString())) {
+          this.emit('completed');
         }
       });
 
+      this.once('completed', () => {
+        logger.debug(this.mStandardOutputBuffer);
+        this.mStandardOutputBuffer = "";
+        logger.info('GDB: Finished startup.');
+        this.gdbStarted = true;
+        this.isRunning = true;
+
+        // Handle GDB process start
+        this.handleGDBProcessStartedHelper().then(() => {
+            resolve();
+        }).catch((err) => {
+            reject(err);
+        });
+      });
+
+      // read GDB error output
       this.mpGDBProcess.stderr!.on('data', (data) => {
         reject(new Error(`Error from GDB: ${data.toString()}`));
       });
@@ -140,43 +164,47 @@ export class GDBAdapter {
 
       this.mpGDBProcess.once('exit', (code, signal) => {
         logger.info(`GDB: Process exited with code ${code} and signal ${signal}`);
-        this.gdbStarted = false;
         this.gdbKilled = true;
+        this.isRunning = false;
+        this.gdbStarted = false;
+        this.emit('exited');
       });
     });
   }
 
   /**
-   * Kill GDB process.
+   * Quit GDB process.
+   *
+   * If quit failed kill process.
    */
-  public kill(): Promise<void> {
+  async quit(): Promise<void> {
 
-    return new Promise<void>((resolve, reject) => {
-      if (!this.mpGDBProcess || this.gdbKilled) {
-        reject(new Error('GDB process is not running.'));
-        return;
-      }
+    if (!this.mpGDBProcess || this.gdbKilled) {
+      return;
+    }
 
-      // Resolve the promise when the process exits
-      this.mpGDBProcess.once('exit', () => {
-        this.gdbKilled = true;
-        this.gdbStarted = false;
-        resolve();
-      });
+    // Stop GDB
+    // TODO: Add some timeout
+    await this.sendCommand(CommandFactory.gdbExit(), GDBCommandFlag.nonCriticalResponse);
 
-      // Kill the process
+    // Kill the process
+    if (!this.gdbKilled) {
+      logger.info("GDB: Killed process.");
       this.mpGDBProcess.kill();
-    });
+      this.gdbKilled = true;
+      this.isRunning = false;
+      this.gdbStarted = false;
+    }
   }
 
   public isGDBRunning(): boolean {
-    return this.gdbStarted && this.acceptingCommand;
+    return this.gdbStarted && this.isRunning;
   }
 
   /**
    * Send command to GDB.
    *
-   * Resolves when response ends with "(gdb)".
+   * Resolves when response completed.
    *
    * @param command   GDB command.
    * @param flags     Command flags.
@@ -192,45 +220,127 @@ export class GDBAdapter {
         return;
       }
 
-      this.token += 1;
       const cmd = new GDBMICommand(flags, command);
 
-      //cmd.mCommand = `${this.token}${cmd.mCommand}`;
-      this.mGDBMICommandsHash[this.token] = cmd;
+      // Resolve when GDB command completed.
+      this.once('completed', () => {
+        const response = this.mStandardOutputBuffer;
+        logger.debug(`\n${response}`);
+        this.mStandardOutputBuffer = "";
+        logger.info(`GDB: Finished command "${cmd.mCommand}"`);
+        resolve(response);
+      });
+
+      this.on('exited', () => {
+        const response = this.mStandardOutputBuffer;
+        logger.debug(`\n${response}`);
+        this.mStandardOutputBuffer = "";
+        resolve(response);
+      });
 
       // Log command
       logger.info(`GDB: Run command "${cmd.mCommand}"`);
-      // TODO: Add logger
-      //this.writeDebuggerCommandLog(cmd.mCommand);
 
-      // Resolve when GDB sends "(gdb)" and is ready to accept commands.
-      let responseData = '';
-      let counter = 0;
-      this.mpGDBProcess.stdout!.on('data', (data) => {
-        const stringData = data.toString();
-        responseData += stringData;
-        logger.debug(stringData);
-        // Check if the response is complete
-        if (stringData.trim().endsWith('(gdb)')) {
-          counter++;
-        }
-        // For whatever reason there are two (gdb) when running a command.
-        if (counter >= 2) {
-          // Remove the 'data' event listeners once the 'launch' promise is resolved
-          logger.info(`GDB: Finished command "${cmd.mCommand}"`);
-          this.mpGDBProcess!.stdout!.removeAllListeners('data');
-          resolve(responseData);
-        }
-      });
-
+      // Pass command to GDB
       this.mpGDBProcess.stdin!.write(`${cmd.mCommand}\r\n`);
-
-      // TODO: When does it end on '-gdb-exit'?
-      //if (!cmd.mCommand.endsWith('-gdb-exit')) {
-      //  this.mGDBCommandTimer.start();
-      //}
     });
+  }
 
+  /**
+   *
+   */
+  async handleGDBProcessStartedHelper(): Promise<void> {
+    // Create the temporary path
+    //const tmpPath: string = Utilities.tempDirectory();
 
+    // Set the GDB environment before starting the actual debugging
+    // Sets the confirm on/off. Off disables confirmation requests. On enables confirmation requests.
+    await this.sendCommand(CommandFactory.gdbSet("confirm off"), GDBCommandFlag.nonCriticalResponse);
+
+    // When displaying a pointer to an object, identify the actual (derived) type of the object rather than the declared type,
+    // using the virtual function table.
+    await this.sendCommand(CommandFactory.gdbSet("print object on"), GDBCommandFlag.nonCriticalResponse);
+
+    // This indicates that an unrecognized breakpoint location should automatically result in a pending breakpoint being created.
+    await this.sendCommand(CommandFactory.gdbSet("breakpoint pending on"), GDBCommandFlag.nonCriticalResponse);
+
+    // This command sets the width of the screen to num characters wide.
+    await this.sendCommand(CommandFactory.gdbSet("width 0"), GDBCommandFlag.nonCriticalResponse);
+
+    // This command sets the height of the screen to num lines high.
+    await this.sendCommand(CommandFactory.gdbSet("height 0"), GDBCommandFlag.nonCriticalResponse);
+
+    /* Set a limit on how many elements of an array GDB will print.
+     * If GDB is printing a large array, it stops printing after it has printed
+     * the number of elements set by the set print elements command. This limit
+     * also applies to the display of strings. When GDB starts, this limit is
+     * set to 200.  Setting number-of-elements to zero means that the printing
+     * is unlimited.
+     */
+    // TODO: Make this an option in the final extension
+    const numberOfElements: number = 200;
+    await this.sendCommand(CommandFactory.gdbSet(`print elements ${numberOfElements}`), GDBCommandFlag.nonCriticalResponse);
+
+    // Set the inferior arguments.
+    // GDB changes the program arguments if we pass them through --args e.g -override=variableFilter=.*
+    await this.sendCommand(CommandFactory.gdbSet(`args ${this.mInferiorArguments.join(" ")}`), GDBCommandFlag.nonCriticalResponse);
+
+    // Insert breakpoints
+    await this.insertCatchOMCBreakpoint();
+    await this.insertBreakpoints();
+  }
+
+  /**
+   * Inserts a breakpoint at Catch.omc:1 to handle MMC_THROW()
+   */
+  async insertCatchOMCBreakpoint(): Promise<void> {
+    await this.sendCommand(CommandFactory.breakInsert("Catch.omc", 1, true), GDBCommandFlag.silentCommand);
+  }
+
+  /**
+   * Insert all breakpoints from VSCode.
+   */
+  async insertBreakpoints(): Promise<void> {
+  //  //const breakpoints: BreakpointTreeItem[] = MainWindow.instance().getBreakpointsWidget().getBreakpointsTreeModel().getRootBreakpointTreeItem().getChildren();
+  //  // TODO: Get breakpoints from VSCode
+  //  const breakpoints: BreakpointTreeItem[] = [];
+  //  for (const pBreakpoint of breakpoints) {
+  //    this.insertBreakpoint(pBreakpoint);
+  //  }
+  }
+
+  /**
+   * Sends the -break-insert command to GDB.
+   *
+   * @param pBreakpointTreeItem - pointer to BreakpointTreeItem
+   */
+  //insertBreakpoint(pBreakpointTreeItem: BreakpointTreeItem): void {
+  //  // TODO: Get file name, line number, ... from VSCode
+  //  const fileName = "";
+  //  const lineNumber = 0;
+  //  const isDisabled = false;
+  //  const condition = undefined;
+  //  const ignoreCount = 0;
+  //  const command = CommandFactory.breakInsert(
+  //    fileName, lineNumber, isDisabled, condition, ignoreCount);
+  //  this.sendCommand(command, pBreakpointTreeItem, this.insertBreakpointCB);
+  //}
+
+  // TODO: Move to some util file
+  /**
+   * Check if GDB response is completed.
+   *
+   * @param response GDB stdout response.
+   * @returns        True if GDB finished response.
+   */
+  responseCompleted(response: string): boolean {
+    const trimmed = response.trim();
+    // TODO: Handle running response
+    if (trimmed.includes('*running,thread-id="all"')) {
+      logger.debug("GDB: Still running.");
+      return false;
+    }
+
+    return trimmed.endsWith('(gdb)') || trimmed === "";
   }
 }
