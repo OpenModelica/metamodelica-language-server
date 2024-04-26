@@ -37,7 +37,7 @@ import * as Mocha from 'mocha';
 import * as assert from 'assert';
 import * as Parser from 'web-tree-sitter';
 
-import { initializeParser } from '../parser';
+import { initializeMetaModelicaParser } from '../metaModelicaParser';
 
 const metaModelicaTestString = `
 model M "Hello World MetaModelica"
@@ -50,11 +50,11 @@ const parsedMetaModelicaTestString = "(stored_definition classDefinition: (class
 
 describe('MetaModelica tree-sitter parser', () => {
   it('Initialize parser', async () => {
-    const parser = await initializeParser();
+    const parser = await initializeMetaModelicaParser();
   });
 
   it('Parse string', async () => {
-    const parser = await initializeParser();
+    const parser = await initializeMetaModelicaParser();
     const tree = parser.parse(metaModelicaTestString);
     const parsedString = tree.rootNode.toString();
     assert.equal(parsedString, parsedMetaModelicaTestString);

@@ -14,7 +14,10 @@
     "type": "git",
     "url": "https://github.com/OpenModelica/metamodelica-language-server"
   },
-  "scripts": {},
+  "scripts": {
+    "tree-sitter-gdbmi": "cd node_modules/tree-sitter-gdbmi && npx tree-sitter generate && npx tree-sitter build --wasm --docker . && cp tree-sitter-gdbmi.wasm ../../src/parser",
+    "postinstall": "npm run tree-sitter-gdbmi"
+  },
   "devDependencies": {
     "@types/vscode": "^1.88.0",
     "@vscode/debugadapter": "^1.65.0",
@@ -22,6 +25,10 @@
     "await-notify": "^1.0.1",
     "base64-js": "^1.5.1",
     "events": "^3.3.0",
-    "path-browserify": "^1.0.1"
+    "path-browserify": "^1.0.1",
+    "tree-sitter-gdbmi": "github:novafacing/tree-sitter-gdbmi"
+  },
+  "dependencies": {
+    "web-tree-sitter": "^0.22.5"
   }
 }

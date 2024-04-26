@@ -5,10 +5,13 @@
     "lib": [
       "es2020"
     ],
-    "outDir": "out",
-    "rootDir": "src",
+    "moduleResolution": "node",
+    "declaration": true,
     "sourceMap": true,
     "strict": true, /* enable all strict type-checking options */
+    "outDir": "out",
+    "rootDir": "src",
+    "esModuleInterop": true,
     /* Additional Checks */
     // "noImplicitReturns": true, /* Report error when not all code paths in function return a value. */
     // "noFallthroughCasesInSwitch": true, /* Report errors for fallthrough cases in switch statement. */

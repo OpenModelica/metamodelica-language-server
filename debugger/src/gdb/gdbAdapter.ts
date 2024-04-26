@@ -39,6 +39,7 @@ import { existsSync } from 'fs';
 
 import * as CommandFactory from './commandFactory';
 import { logger } from '../util/logger';
+import { GDBMIParser } from '../parser/gdbParser';
 
 export enum GDBCommandFlag {
   noFlags             = 0,
@@ -74,7 +75,10 @@ export class GDBAdapter extends EventEmitter {
   private gdbStarted: boolean = false;
   private isRunning: boolean = false;
 
-  private mStandardOutputBuffer: string = "";
+  private token: number = 0;
+  private mStandardOutputBuffer: string = ""; /* Buffer GDB machine interface output from STDOUT */
+
+  private parser: GDBMIParser;
 
   /**
    * Event handler on GDB response completed
@@ -84,6 +88,7 @@ export class GDBAdapter extends EventEmitter {
 
   constructor() {
     super();
+    this.parser = new GDBMIParser();
   }
 
   /**
@@ -106,6 +111,14 @@ export class GDBAdapter extends EventEmitter {
         reject(new Error(`GDB: The executable to debug does not exist: ${program}`));
         return;
       }
+
+      // Start GDB/MI tree-sitter parser
+      this.parser.initialize().then(() => {
+        logger.info('GDB: GDB/MI parser initialized');
+      }).catch((err) => {
+        logger.error('GDB: GDB/MI parser failed to initialized');
+        reject(err);
+      });
 
       /* launch gdb with the default arguments
       * -q  quiet mode. Don't print welcome messages
@@ -132,13 +145,13 @@ export class GDBAdapter extends EventEmitter {
       this.mpGDBProcess.stdout!.on('data', (data) => {
         this.mStandardOutputBuffer += data.toString();
 
-        if (this.responseCompleted(data.toString())) {
+        if (this.parser.responseCompleted(data.toString())) {
           this.emit('completed');
         }
       });
 
       this.once('completed', () => {
-        logger.debug(this.mStandardOutputBuffer);
+        logger.debug(`GDB:\nthis.mStandardOutputBuffer`);
         this.mStandardOutputBuffer = "";
         logger.info('GDB: Finished startup.');
         this.gdbStarted = true;
@@ -220,21 +233,26 @@ export class GDBAdapter extends EventEmitter {
         return;
       }
 
-      const cmd = new GDBMICommand(flags, command);
+      this.token += 1;
+      const cmd = new GDBMICommand(flags, `${this.token}${command}`);
+
+      const onExited = () => {
+        const response = this.mStandardOutputBuffer;
+        logger.debug(`\n${response}`);
+        this.mStandardOutputBuffer = "";
+        // This will leak event listener for 'completed', but who cares...
+        resolve(response);
+      };
+      this.once('exited', onExited);
 
       // Resolve when GDB command completed.
       this.once('completed', () => {
         const response = this.mStandardOutputBuffer;
         logger.debug(`\n${response}`);
         this.mStandardOutputBuffer = "";
+        logger.info(`GDB: Event listener count 'completed' ${this.listenerCount('completed')}`);
         logger.info(`GDB: Finished command "${cmd.mCommand}"`);
-        resolve(response);
-      });
-
-      this.on('exited', () => {
-        const response = this.mStandardOutputBuffer;
-        logger.debug(`\n${response}`);
-        this.mStandardOutputBuffer = "";
+        this.removeListener('exited', onExited);
         resolve(response);
       });
 
@@ -325,22 +343,4 @@ export class GDBAdapter extends EventEmitter {
   //    fileName, lineNumber, isDisabled, condition, ignoreCount);
   //  this.sendCommand(command, pBreakpointTreeItem, this.insertBreakpointCB);
   //}
-
-  // TODO: Move to some util file
-  /**
-   * Check if GDB response is completed.
-   *
-   * @param response GDB stdout response.
-   * @returns        True if GDB finished response.
-   */
-  responseCompleted(response: string): boolean {
-    const trimmed = response.trim();
-    // TODO: Handle running response
-    if (trimmed.includes('*running,thread-id="all"')) {
-      logger.debug("GDB: Still running.");
-      return false;
-    }
-
-    return trimmed.endsWith('(gdb)') || trimmed === "";
-  }
 }

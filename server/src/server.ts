@@ -42,7 +42,7 @@
 import * as LSP from 'vscode-languageserver/node';
 import { TextDocument} from 'vscode-languageserver-textdocument';
 
-import { initializeParser } from './parser';
+import { initializeMetaModelicaParser } from './metaModelicaParser';
 import Analyzer from './analyzer';
 import { logger, setLogConnection, setLogLevel } from './util/logger';
 
@@ -75,7 +75,7 @@ export class MetaModelicaServer {
     setLogLevel('debug');
     logger.debug('Initializing...');
 
-    const parser = await initializeParser();
+    const parser = await initializeMetaModelicaParser();
     const analyzer = new Analyzer(parser);
 
     const server = new MetaModelicaServer(analyzer, capabilities, connection);

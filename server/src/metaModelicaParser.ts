@@ -48,7 +48,7 @@ import * as path from 'path';
  *
  * @returns tree-sitter-metamodelica parser
  */
-export async function initializeParser(): Promise<Parser> {
+export async function initializeMetaModelicaParser(): Promise<Parser> {
   await Parser.init();
   const parser = new Parser;
 
