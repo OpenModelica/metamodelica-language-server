@@ -129,20 +129,30 @@
                 "description": "Absolute path to OpenModelica Compiler executable omc.",
                 "default": "${workspaceFolder}/build_cmake/install_cmake/bin/omc"
               },
+              "arguments": {
+                "type": "string[]",
+                "description": "Arguments to omc. E.g. MOS file",
+                "default": "[\"path/to/debug.mos\"]"
+              },
               "gdb": {
                 "type": "string",
-                "description": "Absolute path to GDB executable",
+                "description": "Absolute path to GDB executable.",
                 "default": "gdb"
               },
-              "mosFile": {
-                "type": "string",
-                "description": "Absolute path to OpenModelica scripting (.mos) file.",
-                "default": "gdb"
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Automatically stop target after launch. If not specified, target does not stop.",
+                "default": false
               },
               "trace": {
                 "type": "boolean",
                 "description": "Enable logging of the Debug Adapter Protocol.",
                 "default": true
+              },
+              "noDebug": {
+                "type": "boolean",
+                "description": "Run without debugging. If not specifier debug.",
+                "default": false
               },
               "compileError": {
                 "type": "string",

@@ -49,10 +49,10 @@ esbuild.build({
 }).catch(() => process.exit(1));
 
 // Copy tree-sitter.wasm and tree-sitter-metamodelica.wasm and
-// tree-sitter-gbdmi.wasm to the output directory
+// tree-sitter-gdbmi.wasm to the output directory
 if (!fs.existsSync('out')) {
   fs.mkdirSync('out');
 }
 fs.copyFileSync('./server/src/tree-sitter-metamodelica.wasm', './out/tree-sitter-metamodelica.wasm');
-fs.copyFileSync('./debugger/src/parser/tree-sitter-tree-sitter-gbdmi.wasm', './out/tree-sitter-tree-sitter-gbdmi.wasm');
+fs.copyFileSync('./debugger/src/parser/tree-sitter-gdbmi.wasm', './out/tree-sitter-gdbmi.wasm');
 fs.copyFileSync('./server/node_modules/web-tree-sitter/tree-sitter.wasm', './out/tree-sitter.wasm');

@@ -1,9 +1,10 @@
 {
   "name": "metamodelica-language-server-client",
+  "displayName": "MetaModelica Language Server Client",
+  "version": "0.2.0",
   "description": "VSCode part of MetaModelica language server",
   "author": "Andreas Heuermann",
   "license": "See ../OSMC-License.txt",
-  "version": "0.2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/OpenModelica/metamodelica-language-server"

@@ -24,14 +24,19 @@ import { Subject } from 'await-notify';
 import * as base64 from 'base64-js';
 
 /**
- * This interface describes the mock-debug specific launch attributes
- * (which are not part of the Debug Adapter Protocol).
- * The schema for these attributes lives in the package.json of the mock-debug extension.
- * The interface should always match this schema.
+ * This interface describes the MetaModelica specific launch attributes (which
+ * are not part of the Debug Adapter Protocol).
+ * The schema for these attributes lives in the package.json under
+ * "debuggers.configurationAttributes". The interface should always match this
+ * schema.
  */
 interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
-  /** An absolute path to the "program" to debug. */
+  /** Absolute path to OpenModelica Compiler executable omc */
   program: string;
+  /** Arguments to omc */
+  arguments: string[];
+  /** Absolute path to GDB executable */
+  gdb: string;
   /** Automatically stop target after launch. If not specified, target does not stop. */
   stopOnEntry?: boolean;
   /** enable logging the Debug Adapter Protocol */
@@ -254,7 +259,7 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
     await this._configurationDone.wait(1000);
 
     // start the program in the runtime
-    await this._runtime.start(args.program, !!args.stopOnEntry, !args.noDebug);
+    await this._runtime.start(args.program, args.arguments, args.gdb, !!args.stopOnEntry, !args.noDebug);
 
     if (args.compileError) {
       // simulate a compile/build error in "launch" request:
@@ -275,6 +280,8 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
   }
 
   protected async setBreakPointsRequest(response: DebugProtocol.SetBreakpointsResponse, args: DebugProtocol.SetBreakpointsArguments): Promise<void> {
+
+    console.log("Starting setBreakPointsRequest.");
 
     const path = args.source.path as string;
     const clientLines = args.lines || [];

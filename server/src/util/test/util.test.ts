@@ -36,12 +36,11 @@
 import * as assert from 'assert';
 
 import { MetaModelicaQueries } from '../../analyzer';
-import { initializeParser } from '../../parser';
-import * as TreeSitterUtil from '../tree-sitter';
+import { initializeMetaModelicaParser } from '../../metaModelicaParser';
 
 describe('getIdentifier', () => {
   it('Identifier of type class', async () => {
-    const parser = await initializeParser();
+    const parser = await initializeMetaModelicaParser();
     const tree = parser.parse("type Temperature = Real(unit = \"K \");");
     const classNode = tree.rootNode.childForFieldName("classDefinitionList")!;
     const queries = new MetaModelicaQueries(parser.getLanguage());

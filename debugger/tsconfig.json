@@ -26,10 +26,9 @@
     "noUnusedParameters": false
   },
   "include": [
-    "src",
+    "src"
   ],
   "exclude": [
-    "node_modules",
-    "src/test"
+    "node_modules"
   ]
 }

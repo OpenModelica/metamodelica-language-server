@@ -37,7 +37,7 @@ import * as assert from 'assert';
 import * as LSP from 'vscode-languageserver/node';
 
 import { MetaModelicaQueries } from '../../analyzer';
-import { initializeParser } from '../../parser';
+import { initializeMetaModelicaParser } from '../../metaModelicaParser';
 import { getDiagnosticsFromTree } from '../diagnostics';
 
 const metaModelicaTestString = `
@@ -177,7 +177,7 @@ const expectedDiagnostics: LSP.Diagnostic[] = [
 
 describe('getAllDeclarationsInTree', () => {
   it('Definitions and types', async () => {
-    const parser = await initializeParser();
+    const parser = await initializeMetaModelicaParser();
     const tree = parser.parse(metaModelicaTestString);
     const queries = new MetaModelicaQueries(parser.getLanguage());
     const diagnostics = getDiagnosticsFromTree(tree, queries);

@@ -5,18 +5,14 @@
   "description": "[Experimental] MetaModelica debugger.",
   "author": "Andreas Heuermann",
   "license": "See ../OSMC-License.txt",
-  "engines": {
-    "node": "20",
-    "vscode": "^1.75.0"
-  },
-  "private": true,
   "repository": {
     "type": "git",
     "url": "https://github.com/OpenModelica/metamodelica-language-server"
   },
-  "scripts": {
-    "tree-sitter-gdbmi": "cd node_modules/tree-sitter-gdbmi && npx tree-sitter generate && npx tree-sitter build --wasm --docker . && cp tree-sitter-gdbmi.wasm ../../src/parser",
-    "postinstall": "npm run tree-sitter-gdbmi"
+  "private": true,
+  "engines": {
+    "node": "20",
+    "vscode": "^1.75.0"
   },
   "devDependencies": {
     "@types/vscode": "^1.88.0",
@@ -30,5 +26,9 @@
   },
   "dependencies": {
     "web-tree-sitter": "^0.22.5"
+  },
+  "scripts": {
+    "tree-sitter-gdbmi": "cd node_modules/tree-sitter-gdbmi && npx tree-sitter generate && npx tree-sitter build --wasm --docker . && cp tree-sitter-gdbmi.wasm ../../src/parser",
+    "postinstall": "npm run tree-sitter-gdbmi"
   }
 }

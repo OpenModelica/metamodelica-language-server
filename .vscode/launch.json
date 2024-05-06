@@ -58,7 +58,7 @@
       "type": "node",
       "request": "launch",
       "cwd": "${workspaceFolder}",
-      "program": "${workspaceFolder}/out/debugger.ts",
+      "program": "${workspaceFolder}/out/debugger.js",
       "args": [
         "--server=4711"
       ],

@@ -2,7 +2,13 @@
  * Copyright (C) Microsoft Corporation. All rights reserved.
  *--------------------------------------------------------*/
 
+import * as vscode from 'vscode';
+
+import { isMetaModelicaFile } from './util/util';
+import { BreakpointHandler } from './breakpoints/breakpoints';
 import { EventEmitter } from 'events';
+import path from 'path';
+import { logger } from '@vscode/debugadapter';
 
 export interface FileAccessor {
   isWindows: boolean;
@@ -135,6 +141,7 @@ export class MockRuntime extends EventEmitter {
 
   // maps from sourceFile to array of IRuntimeBreakpoint
   private breakPoints = new Map<string, IRuntimeBreakpoint[]>();
+  private breakpointHandler = new BreakpointHandler();
 
   // all instruction breakpoint addresses
   private instructionBreakpoints = new Set<number>();
@@ -154,14 +161,18 @@ export class MockRuntime extends EventEmitter {
   }
 
   /**
-   * Start executing the given program.
+   * Start executing OpenModelica compiler.
    */
-  public async start(program: string, stopOnEntry: boolean, debug: boolean): Promise<void> {
+  public async start(omc: string,
+    _arguments: string[],
+    _gdb: string,
+    stopOnEntry: boolean,
+    debug: boolean): Promise<void> {
 
-    await this.loadSource(this.normalizePathAndCasing(program));
+    await this.loadSource(this.normalizePathAndCasing(omc));
 
     if (debug) {
-      await this.verifyBreakpoints(this._sourceFile);
+      await this.verifyBreakpoints(vscode.debug.breakpoints);
 
       if (stopOnEntry) {
         this.findNextStatement(false, 'stopOnEntry');
@@ -332,7 +343,7 @@ export class MockRuntime extends EventEmitter {
   }
 
   /*
-   * Set breakpoint in file with given line.
+   * Set breakpoint in MetaModelica file with given line.
    */
   public async setBreakPoint(path: string, line: number): Promise<IRuntimeBreakpoint> {
     path = this.normalizePathAndCasing(path);
@@ -645,9 +656,30 @@ export class MockRuntime extends EventEmitter {
     return false;
   }
 
-  private async verifyBreakpoints(path: string): Promise<void> {
+  /**
+   * Verify breakpoints.
+   *
+   * Collect breakpoints from MetaModelica files. Add corresponding C
+   * breakpoints.
+   *
+   * @param breakpoints   List of breakpoints
+   */
+  private async verifyBreakpoints(breakpoints: vscode.Breakpoint[]): Promise<void> {
 
-    const bps = this.breakPoints.get(path);
+    for (const bp of breakpoints) {
+      if (bp instanceof vscode.SourceBreakpoint) {
+        if (isMetaModelicaFile(bp.location.uri.path)) {
+          this.breakpointHandler.addSourceBreakpoint(bp);
+        }
+      } else if (bp instanceof vscode.FunctionBreakpoint) {
+        // TODO: Add function breakpoints
+        logger.error("Function breakpoints not yet implemented!");
+      }
+    }
+
+
+
+    {const bps = this.breakPoints.get(path);}
     if (bps) {
       await this.loadSource(path);
       bps.forEach(bp => {
