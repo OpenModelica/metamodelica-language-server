@@ -11,7 +11,7 @@
   },
   "engines": {
     "vscode": "^1.75.0",
-    "node": "20"
+    "node": "22"
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1"
