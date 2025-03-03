@@ -23,6 +23,6 @@
   },
   "devDependencies": {
     "tree-sitter-cli": "^0.22.5",
-    "node-wget": "^0.4.3"
+    "request": "^2.88.2"
   }
 }
