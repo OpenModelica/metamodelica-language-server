@@ -101,7 +101,7 @@ npx vsce package
 
 ## License
 
-metamodelica-language-server is licensed under the OSMC Public License v1.8, see
+**metamodelica-language-server** is licensed under the OSMC Public License v1.8, see
 [OSMC-License.txt](./OSMC-License.txt).
 
 ### 3rd Party Licenses
