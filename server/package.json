@@ -22,7 +22,6 @@
     "postinstall": "node tree.sitter.metamodelica.download.js"
   },
   "devDependencies": {
-    "tree-sitter-cli": "^0.22.5",
-    "request": "^2.88.2"
+    "axios": "^1.8.1"
   }
 }
