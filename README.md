@@ -26,7 +26,8 @@ features:
 
 ### Via Marketplace
 
-`OpenModelica.metamodelica-language-server` is not yet listed on the marketplace.
+  - [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=OpenModelica.metamodelica-language-server)
+  - [Open VSX Registry](https://open-vsx.org/extension/OpenModelica/metamodelica-language-server)
 
 ### Via VSIX File
 
@@ -106,7 +107,7 @@ npx vsce package
 
 ## License
 
-metamodelica-language-server is licensed under the OSMC Public License v1.8, see
+**metamodelica-language-server** is licensed under the OSMC Public License v1.8, see
 [OSMC-License.txt](./OSMC-License.txt).
 
 ### 3rd Party Licenses

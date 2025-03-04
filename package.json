@@ -199,14 +199,16 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run esbuild-base -- --minify",
-    "esbuild-base": "node esbuild.config.js",
-    "esbuild": "npm run esbuild-base -- --sourcemap",
-    "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
+    "vscode:prepublish": "node esbuild.config.js --minify",
+    "esbuild": "node esbuild.config.js",
+    "esbuild-watch": "node esbuild.config.js --watch",
     "test-compile": "tsc -b ./",
     "lint": "eslint ./client/src ./server/src ./debugger/src --ext .ts,.tsx",
     "postinstall": "cd client && npm install && cd ../server && npm install && cd ../debugger && npm install && cd ..",
-    "test": "npm run test-compile && sh ./scripts/e2e.sh",
+    "test-compile-post": "run-script-os",
+    "test-compile-post:win32": ".\\scripts\\e2e.bat",
+    "test-compile-post:default": "sh ./scripts/e2e.sh",
+    "test": "npm run test-compile && npm run test-compile-post",
     "test:server": "cd server && npx mocha -r ts-node/register src/test/**/*.test.ts src/util/test/**/*.test.ts",
     "test:debugger": "cd debugger && npx mocha -r ts-node/register src/test/**/*.test.ts",
     "all": "npm run postinstall && npm run esbuild && npm run lint && npm run test:server && npm run test:debugger && npm run test && npm run vscode:prepublish"
@@ -216,12 +218,12 @@
     "@types/node": "^20.12.7",
     "@typescript-eslint/eslint-plugin": "^7.7.0",
     "@typescript-eslint/parser": "^7.7.0",
-    "esbuild": "^0.20.2",
+    "esbuild": "^0.25.0",
     "eslint": "^8.56.0",
     "mocha": "^10.4.0",
     "npm-check-updates": "^16.14.18",
-    "tree-sitter-cli": "^0.22.5",
     "ts-node": "^10.9.2",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "run-script-os": "^1.1.6"
   }
 }

@@ -35,6 +35,22 @@
       ],
       "preLaunchTask": {
         "type": "npm",
+        "script": "esbuild"
+      }
+    },
+    {
+      "name": "Launch Client (watch)",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceRoot}"
+      ],
+      "outFiles": [
+        "${workspaceRoot}/out/**/*.js"
+      ],
+      "preLaunchTask": {
+        "type": "npm",
         "script": "esbuild-watch"
       }
     },
