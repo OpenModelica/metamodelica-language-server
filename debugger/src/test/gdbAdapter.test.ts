@@ -35,6 +35,7 @@
 
 import assert from 'assert';
 import { exec } from 'child_process';
+import * as process from 'process';
 
 import { GDBAdapter, GDBCommandFlag } from '../gdb/gdbAdapter';
 import * as CommandFactory from '../gdb/commandFactory';
@@ -61,6 +62,19 @@ async function which(programName: string): Promise<string> {
   });
 }
 
+async function getOMCAndGDB(): Promise<[string, string]> {
+  const isWindows = process.platform === "win32";
+  let omcExecutable: string, gdbExecutable: string;
+  if (isWindows) {
+    omcExecutable = process.env.OPENMODELICAHOME + "\\bin\\omc.exe";
+    gdbExecutable = process.env.OMDEV + "\\tools\\msys\\ucrt64\\bin\\gdb.exe";
+  } else {
+    omcExecutable = await which('omc');
+    gdbExecutable = await which('gdb');
+  }
+  return [omcExecutable, gdbExecutable];
+}
+
 describe('GDBAdapter', () => {
   let adapter: GDBAdapter;
 
@@ -70,25 +84,21 @@ describe('GDBAdapter', () => {
     }
   });
 
-  it('Start and stop GDBAdapter', async () => {
+  it('Start and stop GDBAdapter with omc', async () => {
     setLogLevel('warning');
 
     adapter = new GDBAdapter();
-    const omcExecutable = await which('omc');
-    const gdbExecutable = await which('gdb');
-
+    const [omcExecutable, gdbExecutable] = await getOMCAndGDB();
     await adapter.launch(omcExecutable, __dirname, [], gdbExecutable);
     assert(adapter.isGDBRunning(), "Assert GDB is running.");
     await adapter.quit();
     assert(!adapter.isGDBRunning(), "Assert GDB is not running any more.");
-  }).timeout("2s");
+  }).timeout("10s");
 
   it('Run gdb omc with "r --version"', async () => {
     setLogLevel('warning');
     adapter = new GDBAdapter();
-    const omcExecutable = await which('omc');
-    const gdbExecutable = await which('gdb');
-
+    const [omcExecutable, gdbExecutable] = await getOMCAndGDB();
     await adapter.launch(omcExecutable, __dirname, [], gdbExecutable);
     assert(adapter.isGDBRunning(), "Assert GDB is running.");
 

@@ -69,7 +69,6 @@ describe('Breakpoints', () => {
       endColumn: 9
     } as DebugProtocol.Breakpoint;
     const cBreakpoint = await handler.addSourceBreakpoint(metaModelicaBreakPoint);
-    console.log(cBreakpoint);
     assert.equal(cBreakpoint[0].line, 880);
   });
 });
