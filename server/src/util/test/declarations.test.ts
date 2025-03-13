@@ -37,7 +37,7 @@ import * as assert from 'assert';
 import * as LSP from 'vscode-languageserver/node';
 
 import { MetaModelicaQueries } from '../../analyzer';
-import { initializeParser } from '../../parser';
+import { initializeMetaModelicaParser } from '../../metaModelicaParser';
 import { getAllDeclarationsInTree, nodeToDocumentSymbol } from '../declarations';
 
 const metaModelicaTestString = `
@@ -101,7 +101,7 @@ const expectedSymbols = [
 
 describe('nodeToDocumentSymbol', () => {
   it('type to TypeParameter', async () => {
-  const parser = await initializeParser();
+  const parser = await initializeMetaModelicaParser();
   const tree = parser.parse("type Temperature = Real(unit = \"K \");");
   const queries = new MetaModelicaQueries(parser.getLanguage());
   const symbol = nodeToDocumentSymbol(tree.rootNode.childForFieldName("classDefinitionList")!, queries, []);
@@ -113,7 +113,7 @@ describe('nodeToDocumentSymbol', () => {
 
 describe('getAllDeclarationsInTree', () => {
   it('Definitions and types', async () => {
-    const parser = await initializeParser();
+    const parser = await initializeMetaModelicaParser();
     const tree = parser.parse(metaModelicaTestString);
     const queries = new MetaModelicaQueries(parser.getLanguage());
     const symbols = getAllDeclarationsInTree(tree, queries);

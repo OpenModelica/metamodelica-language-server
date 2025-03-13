@@ -1,14 +1,15 @@
 {
   "name": "metamodelica-language-server-client",
-  "description": "VSCode part of a language server",
+  "displayName": "MetaModelica Language Server Client",
+  "version": "0.2.0",
+  "description": "VSCode part of MetaModelica language server",
   "author": "Andreas Heuermann",
   "license": "See ../OSMC-License.txt",
-  "version": "0.2.0",
-  "publisher": "vscode",
   "repository": {
     "type": "git",
     "url": "https://github.com/OpenModelica/metamodelica-language-server"
   },
+  "private": true,
   "engines": {
     "vscode": "^1.75.0",
     "node": "22"
@@ -18,6 +19,8 @@
   },
   "devDependencies": {
     "@types/vscode": "^1.88.0",
-    "@vscode/test-electron": "^2.3.9"
+    "@vscode/test-electron": "^2.3.9",
+    "@types/glob": "^8.1.0",
+    "glob": "^11.0.1"
   }
 }

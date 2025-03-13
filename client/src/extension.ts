@@ -43,11 +43,14 @@ import {
   TransportKind
 } from 'vscode-languageclient/node';
 import { getFileExtension, getLanguage } from './getLanguage';
-import { fstat } from 'fs';
+import * as DebuggerExtension from '../../debugger/src/debugger';
 
 let client: LanguageClient;
+let metaModelicaDebugger: any;
 
-export function activate(context: ExtensionContext) {
+export async function activate(context: ExtensionContext) {
+  // Activate Debugger
+  DebuggerExtension.initialize(context);
   // Register event listener to set language for '.mo' files.
   const checkedFiles: { [id: string]: boolean} = {};
   workspace.onDidOpenTextDocument((document: TextDocument) => {
@@ -56,7 +59,7 @@ export function activate(context: ExtensionContext) {
     }
 
     checkedFiles[document.fileName] = true;
-    if (getFileExtension(document) == '.mo') {
+    if (getFileExtension(document) === '.mo') {
       const lang = getLanguage(document);
 
       // TODO: Fix this mess!
@@ -124,6 +127,9 @@ export function activate(context: ExtensionContext) {
 export function deactivate(): Thenable<void> | undefined {
   if (!client) {
     return undefined;
+  }
+  if (metaModelicaDebugger) {
+    metaModelicaDebugger.deactivate();
   }
   return client.stop();
 }

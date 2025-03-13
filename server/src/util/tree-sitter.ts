@@ -152,7 +152,7 @@ export function getClassType(node: SyntaxNode): string | null {
   }
 
   const classTypeNode = node.childForFieldName('classType');
-  if (classTypeNode == null || classTypeNode.type !== 'class_type') {
+  if (classTypeNode === null || classTypeNode.type !== 'class_type') {
     return null;
   }
 

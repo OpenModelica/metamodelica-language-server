@@ -10,6 +10,7 @@
 **/tsconfig.json
 client/
 contributing.md
+debugger/
 esbuild.config.js
 node_modules/
 scripts/

@@ -11,7 +11,8 @@
   },
   "publisher": "OpenModelica",
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Debuggers"
   ],
   "keywords": [
     "modelica",
@@ -26,19 +27,99 @@
     "vscode": "^1.75.0"
   },
   "activationEvents": [
-    "onLanguage:metamodelica"
+    "onLanguage:metamodelica",
+    "onDebugResolve:metamodelica-dbg"
   ],
   "main": "./out/client",
   "contributes": {
     "languages": [
       {
         "id": "metamodelica",
-        "aliases": [
-          "MetaModelica",
-          "metamodelica"
-        ],
         "extensions": [
           ".mo"
+        ]
+      }
+    ],
+    "breakpoints": [
+      {
+        "language": "metamodelica"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "metamodelica-dbg",
+        "languages": [
+          "metamodelica"
+        ],
+        "label": "MetaModelica Debug",
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "program",
+              "gdb"
+            ],
+            "properties": {
+              "gdb": {
+                "type": "string",
+                "description": "Absolute path to GDB executable.",
+                "default": "gdb"
+              },
+              "program": {
+                "type": "string",
+                "description": "Absolute path to OpenModelica Compiler executable omc.",
+                "default": "${workspaceFolder}/build_cmake/install_cmake/bin/omc"
+              },
+              "arguments": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Arguments to omc. e.g., MOS file",
+                "default": ["script.mos"]
+              },
+              "cwd": {
+                "type": "string",
+                "description": "Absolute path to working directory.",
+                "default": "${workspaceFolder}"
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Automatically stop target after launch. If not specified, target does not stop.",
+                "default": false
+              },
+              "trace": {
+                "type": "boolean",
+                "description": "Enable logging of the Debug Adapter Protocol.",
+                "default": true
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "name": "MetaModelica Debug Launch Configuration",
+            "type": "metamodelica-dbg",
+            "request": "launch",
+            "gdb": "gdb",
+            "program": "omc",
+            "arguments": [],
+            "cwd": "${workspaceFolder}"
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "MetMetaModelica Debug Launch Configuration",
+            "description": "A new configuration for 'debugging' the OpenModelica compiler.",
+            "body": {
+              "name": "MetaModelica Debug Launch Configuration",
+              "type": "metamodelica-dbg",
+              "request": "launch",
+              "gdb": "gdb",
+              "program": "omc",
+              "arguments": [],
+              "cwd": "${workspaceFolder}"
+            }
+          }
         ]
       }
     ]
@@ -48,14 +129,15 @@
     "esbuild": "node esbuild.config.js",
     "esbuild-watch": "node esbuild.config.js --watch",
     "test-compile": "tsc -b ./",
+    "lint": "eslint ./client/src ./server/src ./debugger/src --ext .ts,.tsx",
+    "postinstall": "cd client && npm install && cd ../server && npm install && cd ../debugger && npm install && cd ..",
     "test-compile-post": "run-script-os",
     "test-compile-post:win32": ".\\scripts\\e2e.bat",
     "test-compile-post:default": "sh ./scripts/e2e.sh",
-    "lint": "eslint ./client/src ./server/src --ext .ts,.tsx",
-    "postinstall": "cd client && npm install && cd ../server && npm install && cd ..",
     "test": "npm run test-compile && npm run test-compile-post",
     "test:server": "cd server && npx mocha -r ts-node/register src/test/**/*.test.ts src/util/test/**/*.test.ts",
-    "all": "npm run postinstall && npm run esbuild && npm run lint && npm run test:server && npm run test && npm run vscode:prepublish"
+    "test:debugger": "cd debugger && npx mocha -r ts-node/register src/test/**/*.test.ts",
+    "all": "npm run postinstall && npm run esbuild && npm run lint && npm run test:server && npm run test:debugger && npm run test && npm run vscode:prepublish"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.6",

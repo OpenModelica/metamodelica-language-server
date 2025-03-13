@@ -48,7 +48,7 @@ import * as path from 'path';
  *
  * @returns tree-sitter-metamodelica parser
  */
-export async function initializeParser(): Promise<Parser> {
+export async function initializeMetaModelicaParser(): Promise<Parser> {
   await Parser.init();
   const parser = new Parser;
 
@@ -57,8 +57,8 @@ export async function initializeParser(): Promise<Parser> {
     throw new Error(`Can't find 'tree-sitter-metamodelica.wasm' at ${metamodelicaWasmFile}`);
   }
 
-  const MetaModelica = await Parser.Language.load(metamodelicaWasmFile);
-  parser.setLanguage(MetaModelica);
+  const metaModelica = await Parser.Language.load(metamodelicaWasmFile);
+  parser.setLanguage(metaModelica);
 
   return parser;
 }

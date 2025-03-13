@@ -79,18 +79,25 @@ Found a bug or having issues? Open a
 
 ## Building the Language Server
 
+### Dependencies
+
+  - Docker installed and running.
+
+### Quick install
+
   - Run `npm install` and `npm run postinstall` in this folder.This installs all
     necessary npm modules in both the client and server folder
   - Open VS Code on this folder.
-  - Press Ctrl+Shift+B to start compiling the client and server in [watch
-    mode](https://code.visualstudio.com/docs/editor/tasks#:~:text=The%20first%20entry%20executes,the%20HelloWorld.js%20file.).
+  - Press Ctrl+Shift+B to start compiling the client and server.
   - Switch to the Run and Debug View in the Sidebar (Ctrl+Shift+D).
   - Select `Launch Client` from the drop down (if it is not already).
   - Press ▷ to run the launch config (F5).
+  - Both build task and launch are available in [watch
+    mode](https://code.visualstudio.com/docs/editor/tasks#:~:text=The%20first%20entry%20executes,the%20HelloWorld.js%20file.)
   - In the [Extension Development
     Host](https://code.visualstudio.com/api/get-started/your-first-extension#:~:text=Then%2C%20inside%20the%20editor%2C%20press%20F5.%20This%20will%20compile%20and%20run%20the%20extension%20in%20a%20new%20Extension%20Development%20Host%20window.)
     instance of VSCode, open a document in 'metamodelica' language mode.
-    - Check the console output of `Language Server MetaModelica` to see the parsed
+    - Check the console output of `MetaModelica Language Server` to see the parsed
       tree of the opened file.
 
 ## Build and Install Extension
@@ -113,6 +120,8 @@ licensed under MIT license.
 Some parts of the source code are taken from
 [bash-lsp/bash-language-server](https://github.com/bash-lsp/bash-language-server),
 licensed under the MIT license and adapted to the MetaModelica language server.
+
+The debugger is based on [microsoft/vscode-mock-debug](https://github.com/microsoft/vscode-mock-debug) licensed under MIT.
 
 [OpenModelica/tree-sitter-metamodelica](https://github.com/OpenModelica/tree-sitter-metamodelica)
 v0.2.0 is included in this extension and is licensed under the [OSMC-PL

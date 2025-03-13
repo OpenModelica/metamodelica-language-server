@@ -68,7 +68,7 @@ const esbuildClientProblemMatcherPlugin = {
     build.onEnd(result => {
       result.errors.forEach(({ text, location }) => {
         console.error(`✘ Client${watchStr}build [ERROR] ${text}`);
-        if (location == null) return;
+        if (location == null) {return;}
         console.error(`    ${location.file}:${location.line}:${location.column}:`);
       });
       console.log(`Client${watchStr}build finished`);
@@ -85,7 +85,7 @@ const esbuildServerProblemMatcherPlugin = {
     build.onEnd(result => {
       result.errors.forEach(({ text, location }) => {
         console.error(`✘ Server${watchStr}build [ERROR] ${text}`);
-        if (location == null) return;
+        if (location == null) {return;}
         console.error(`    ${location.file}:${location.line}:${location.column}:`);
       });
       console.log(`Server${watchStr}build finished`);
@@ -98,9 +98,11 @@ main().catch(e => {
   process.exit(1);
 });
 
-// Copy tree-sitter.wasm and tree-sitter-metamodelica.wasm to the output directory
+// Copy tree-sitter.wasm and tree-sitter-metamodelica.wasm and
+// tree-sitter-gdbmi.wasm to the output directory
 if (!fs.existsSync('out')) {
   fs.mkdirSync('out');
 }
 fs.copyFileSync('./server/src/tree-sitter-metamodelica.wasm', './out/tree-sitter-metamodelica.wasm');
+fs.copyFileSync('./debugger/src/parser/tree-sitter-gdbmi.wasm', './out/tree-sitter-gdbmi.wasm');
 fs.copyFileSync('./server/node_modules/web-tree-sitter/tree-sitter.wasm', './out/tree-sitter.wasm');

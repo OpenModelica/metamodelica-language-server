@@ -52,6 +52,39 @@
         "type": "npm",
         "script": "test-compile"
       }
+    },
+    {
+      "name": "Debugger Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "${workspaceFolder}/sampleWorkspace",
+        "--verbose"
+      ],
+      "outFiles": [
+        "${workspaceRoot}/out/**/*.js"
+      ],
+      "preLaunchTask": {
+        "type": "npm",
+        "script": "esbuild"
+      }
+    },
+    {
+      "name": "Debugger Extension (watch)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "${workspaceFolder}/sampleWorkspace"
+      ],
+      "outFiles": [
+        "${workspaceRoot}/out/**/*.js"
+      ],
+      "preLaunchTask": {
+        "type": "npm",
+        "script": "esbuild-watch"
+      }
     }
   ]
 }
