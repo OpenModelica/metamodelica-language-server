@@ -4,25 +4,6 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Mocha Tests Debugger",
-      "args": [
-        "-r",
-        "ts-node/register",
-        "--timeout",
-        "999999",
-        "--colors",
-        "src/test/**/*.test.ts"
-      ],
-      "cwd": "${workspaceFolder}/debugger",
-      "internalConsoleOptions": "openOnSessionStart",
-      "program": "${workspaceFolder}/node_modules/mocha/bin/_mocha",
-      "request": "launch",
-      "skipFiles": [
-        "<node_internals>/**"
-      ],
-      "type": "node"
-    },
-    {
       "name": "Launch Client",
       "type": "extensionHost",
       "request": "launch",
@@ -78,6 +59,23 @@
       "request": "launch",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
+        "${workspaceFolder}/sampleWorkspace",
+        "--verbose"
+      ],
+      "outFiles": [
+        "${workspaceRoot}/out/**/*.js"
+      ],
+      "preLaunchTask": {
+        "type": "npm",
+        "script": "esbuild"
+      }
+    },
+    {
+      "name": "Debugger Extension (watch)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
         "${workspaceFolder}/sampleWorkspace"
       ],
       "outFiles": [
@@ -87,55 +85,6 @@
         "type": "npm",
         "script": "esbuild-watch"
       }
-    },
-    {
-      "name": "Debugger Server",
-      "type": "node",
-      "request": "launch",
-      "cwd": "${workspaceFolder}",
-      "program": "${workspaceFolder}/out/debugger.js",
-      "args": [
-        "--server=4711"
-      ],
-      "outFiles": [
-        "${workspaceRoot}/debugger/out/test/**/*.js"
-      ],
-      "preLaunchTask": {
-        "type": "npm",
-        "script": "esbuild-watch"
-      }
-    },
-    {
-      "name": "Debugger Tests",
-      "type": "node",
-      "request": "launch",
-      "cwd": "${workspaceFolder}",
-      "program": "${workspaceFolder}/node_modules/mocha/bin/_mocha",
-      "args": [
-        "-u",
-        "tdd",
-        "--timeout",
-        "999999",
-        "--colors",
-        "./out/tests/"
-      ],
-      "outFiles": [
-        "${workspaceFolder}/out/**/*.js"
-      ],
-      "internalConsoleOptions": "openOnSessionStart",
-      "preLaunchTask": {
-        "type": "npm",
-        "script": "esbuild-watch"
-      }
-    }
-  ],
-  "compounds": [
-    {
-      "name": "Extension + Server",
-      "configurations": [
-        "Debugger Extension",
-        "Debugger Server"
-      ]
     }
   ]
 }

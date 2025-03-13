@@ -53,30 +53,6 @@ async function main() {
     await server.rebuild();
     await server.dispose();
   }
-
-  // Build debugger
-  const debuggerCtx = await esbuild.context({
-    entryPoints: ['./debugger/src/debugger.ts'],
-    bundle: true,
-    format: 'cjs',
-    minify: production,
-    sourcemap: !production,
-    sourcesContent: false,
-    platform: 'node',
-    outfile: './out/debugger.js',
-    external: ['vscode'],
-    logLevel: 'warning',
-    plugins: [
-      /* add to the end of plugins array */
-      esbuildDebuggerProblemMatcherPlugin
-    ]
-  });
-  if (watch) {
-    await debuggerCtx.watch();
-  } else {
-    await debuggerCtx.rebuild();
-    await debuggerCtx.dispose();
-  }
 }
 
 /**
@@ -113,23 +89,6 @@ const esbuildServerProblemMatcherPlugin = {
         console.error(`    ${location.file}:${location.line}:${location.column}:`);
       });
       console.log(`Server${watchStr}build finished`);
-    });
-  }
-};
-const esbuildDebuggerProblemMatcherPlugin = {
-  name: 'esbuild-debugger-problem-matcher',
-
-  setup(build) {
-    build.onStart(() => {
-      console.log(`Debugger${watchStr}build started`);
-    });
-    build.onEnd(result => {
-      result.errors.forEach(({ text, location }) => {
-        console.error(`✘ Debugger${watchStr}build [ERROR] ${text}`);
-        if (location == null) {return;}
-        console.error(`    ${location.file}:${location.line}:${location.column}:`);
-      });
-      console.log(`Debugger${watchStr}build finished`);
     });
   }
 };

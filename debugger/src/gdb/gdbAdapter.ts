@@ -39,7 +39,7 @@ import { existsSync } from 'fs';
 
 import * as CommandFactory from './commandFactory';
 import { logger } from '../util/logger';
-import { GDBMIParser } from '../parser/gdbParser';
+import { GDBMIParser, GDBMIOutput, GDBMIOutputType, GDBMIOutOfBandRecordType, GDBMIAsyncRecordType, GDBMIResult } from '../parser/gdbParser';
 
 export enum GDBCommandFlag {
   noFlags             = 0,
@@ -65,10 +65,10 @@ class GDBMICommand {
 }
 
 export class GDBAdapter extends EventEmitter {
-  private mpGDBProcess: ChildProcess | null = null;
-  private mGDBProgram: string = '';
-  private mGDBArguments: string[] = [];
-  private mInferiorArguments: string[] = [];
+  private gdbProcess: ChildProcess | null = null;
+  private gdbProgram: string = '';
+  private gdbArguments: string[] = [];
+  private inferiorArguments: string[] = [];
 
   // TODO: Make this a state machine thingy instead of bazillion booleans.
   private gdbKilled: boolean = true;
@@ -76,7 +76,10 @@ export class GDBAdapter extends EventEmitter {
   private isRunning: boolean = false;
 
   private token: number = 0;
-  private mStandardOutputBuffer: string = ""; /* Buffer GDB machine interface output from STDOUT */
+  private standardOutputBuffer: string = ""; /* Buffer GDB machine interface output from STDOUT */
+  private gdbmiOutput: GDBMIOutput = { type: GDBMIOutputType.noneOutput, miOutOfBandRecordList: [] };
+  private gdbmiCommandOutput?: (data: GDBMIOutput) => void;
+  private programOutput: string = '';
 
   private parser: GDBMIParser;
 
@@ -89,6 +92,8 @@ export class GDBAdapter extends EventEmitter {
   constructor() {
     super();
     this.parser = new GDBMIParser();
+    // Initialize GDB/MI tree-sitter parser
+    this.parser.initialize();
   }
 
   /**
@@ -108,79 +113,132 @@ export class GDBAdapter extends EventEmitter {
     return new Promise<void>((resolve, reject) => {
       // Check if the program to debug exists
       if (!existsSync(program)) {
-        reject(new Error(`GDB: The executable to debug does not exist: ${program}`));
-        return;
+        return reject(new Error(`GDB: The executable to debug does not exist: ${program}`));
       }
-
-      // Start GDB/MI tree-sitter parser
-      this.parser.initialize().then(() => {
-        logger.info('GDB: GDB/MI parser initialized');
-      }).catch((err) => {
-        logger.error('GDB: GDB/MI parser failed to initialized');
-        reject(err);
-      });
-
+      // Check if GDB/MI tree-sitter parser initialized
+      if (!this.parser) {
+        return reject(new Error(`GDB: GDB/MI parser not initialized`));
+      }
       /* launch gdb with the default arguments
       * -q  quiet mode. Don't print welcome messages
       * -nw don't use window interface
       * -i  select interface
       * mi  machine interface
       */
-      this.mGDBProgram = gdbPath;
-      this.mGDBArguments = ['-q', '-nw', '-i', 'mi', '--args', program];
-      this.mpGDBProcess = spawn(this.mGDBProgram, this.mGDBArguments, {
+      this.gdbProgram = gdbPath;
+      this.gdbArguments = ['-q', '-nw', '-i', 'mi', '--args', program];
+      logger.info(`GDB: Launching GDB ${this.gdbProgram} ${this.gdbArguments.join(" ")} with working directory ${workingDirectory}`);
+      if (workingDirectory && !existsSync(workingDirectory)) {
+        return reject(new Error(`GDB: The working directory (cwd) does not exist: ${workingDirectory}`));
+      }
+      this.gdbProcess = spawn(this.gdbProgram, this.gdbArguments, {
         cwd: workingDirectory
       });
-      if (!this.mpGDBProcess) {
-        reject(new Error("GDB: Failed to spawn gdb process."));
-        return;
+      if (!this.gdbProcess) {
+        return reject(new Error("GDB: Failed to spawn gdb process."));
       }
-      this.mInferiorArguments = programArgs;
+      this.inferiorArguments = programArgs;
       this.gdbKilled = false;
 
-      this.mpGDBProcess.on('error', (err) => {
-        logger.error('GDB: Error occurred in process:', err);
-      });
-
-      this.mpGDBProcess.stdout!.on('data', (data) => {
-        this.mStandardOutputBuffer += data.toString();
-
-        if (this.parser.responseCompleted(data.toString())) {
-          this.emit('completed');
-        }
-      });
-
-      this.once('completed', () => {
-        logger.debug(`GDB:\nthis.mStandardOutputBuffer`);
-        this.mStandardOutputBuffer = "";
-        logger.info('GDB: Finished startup.');
-        this.gdbStarted = true;
-        this.isRunning = true;
-
-        // Handle GDB process start
-        this.handleGDBProcessStartedHelper().then(() => {
-            resolve();
-        }).catch((err) => {
-            reject(err);
-        });
-      });
-
-      // read GDB error output
-      this.mpGDBProcess.stderr!.on('data', (data) => {
-        reject(new Error(`Error from GDB: ${data.toString()}`));
-      });
-
-      this.mpGDBProcess.once('spawn', () => {
+      this.gdbProcess.stdout!.once('data', (data: Buffer) => {
         logger.info('GDB: Process started.');
         this.gdbStarted = true;
+        this.isRunning = true;
+        resolve();
       });
 
-      this.mpGDBProcess.once('exit', (code, signal) => {
-        logger.info(`GDB: Process exited with code ${code} and signal ${signal}`);
+      this.gdbProcess.stdout!.on('data', (data) => {
+        let scan = this.standardOutputBuffer.length;
+
+        this.standardOutputBuffer += data.toString();
+
+        let newstart = 0;
+        while (newstart < this.standardOutputBuffer.length) {
+          const start = newstart;
+          let end = this.standardOutputBuffer.indexOf('\n', scan);
+          if (end < 0) {
+            this.standardOutputBuffer = this.standardOutputBuffer.slice(start);
+            return;
+          }
+          newstart = end + 1;
+          scan = newstart;
+          if (end === start) {
+            continue;
+          }
+          if (process.platform === 'win32' && this.standardOutputBuffer[end - 1] === '\r') {
+            --end;
+            if (end === start) {
+              continue;
+            }
+          }
+
+          const response = this.standardOutputBuffer.slice(start, end);
+
+          if (response.trim() === "" || response.trim() === "(gdb)") {
+            continue;
+          }
+
+          // parser requires string to end with newline
+          this.gdbmiOutput = this.parser.parse(response + "\n");
+          // console.log(response);
+          // console.log(this.gdbmiOutput.type);
+          if (this.gdbmiOutput.type === GDBMIOutputType.outOfBandRecordOutput) {
+            for (const miOutOfBandRecord of this.gdbmiOutput.miOutOfBandRecordList) {
+              if (miOutOfBandRecord.type === GDBMIOutOfBandRecordType.asyncRecord) {
+                if (miOutOfBandRecord.miAsyncRecord?.type === GDBMIAsyncRecordType.execAsyncOutput) {
+                  if (miOutOfBandRecord.miAsyncRecord?.miExecAsyncOutput?.miAsyncOutput?.asyncClass === "stopped") {
+                    if (miOutOfBandRecord.miAsyncRecord.miExecAsyncOutput.miAsyncOutput.miResult.variable === "reason") {
+                      if (miOutOfBandRecord.miAsyncRecord.miExecAsyncOutput.miAsyncOutput.miResult.miValue.value === "exited-normally"
+                        || miOutOfBandRecord.miAsyncRecord.miExecAsyncOutput.miAsyncOutput.miResult.miValue.value === "exited") {
+                        this.emit('completed');
+                        this.emit('exit');
+                      } else if (miOutOfBandRecord.miAsyncRecord.miExecAsyncOutput.miAsyncOutput.miResult.miValue.value === "breakpoint-hit") {
+                        this.emit('completed');
+                        this.emit('stopOnBreakpoint');
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            // console.log(this.gdbmiOutput);
+            // console.log(this.gdbmiOutput.miOutOfBandRecordList);
+            // todo
+          } else if (this.gdbmiOutput.type === GDBMIOutputType.resultRecordOutput) {
+            // console.log(this.gdbmiOutput.miResultRecord?.cls);
+            if (this.gdbmiOutput.miResultRecord?.cls === "done") {
+              this.emit('completed');
+            } else if (this.gdbmiOutput.miResultRecord?.cls === "running") {
+              // do not send completed for running as it will break gdbAdapter.test
+              // this.emit('completed');
+            } else {
+              // console.log(this.gdbmiOutput.miResultRecord?.cls);
+            }
+          } else { // GDBMIOutputType.noneOutput
+            this.programOutput += response;
+            // todo
+          }
+
+          if (this.gdbmiCommandOutput) {
+            this.gdbmiCommandOutput(this.gdbmiOutput);
+            this.gdbmiCommandOutput = undefined;
+          }
+        }
+        this.standardOutputBuffer = "";
+      });
+
+      this.gdbProcess.on('error', (err) => {
+        logger.error('GDB: Error occurred in process:', err);
+        reject(err);
+      });
+
+      this.gdbProcess.once('exit', (code, signal) => {
+        const err = `GDB: Process exited with code ${code} and signal ${signal}`;
+        logger.info(err);
         this.gdbKilled = true;
         this.isRunning = false;
         this.gdbStarted = false;
-        this.emit('exited');
+        reject(err);
       });
     });
   }
@@ -192,7 +250,7 @@ export class GDBAdapter extends EventEmitter {
    */
   async quit(): Promise<void> {
 
-    if (!this.mpGDBProcess || this.gdbKilled) {
+    if (!this.gdbProcess || this.gdbKilled) {
       return;
     }
 
@@ -203,7 +261,7 @@ export class GDBAdapter extends EventEmitter {
     // Kill the process
     if (!this.gdbKilled) {
       logger.info("GDB: Killed process.");
-      this.mpGDBProcess.kill();
+      this.gdbProcess.kill();
       this.gdbKilled = true;
       this.isRunning = false;
       this.gdbStarted = false;
@@ -212,6 +270,10 @@ export class GDBAdapter extends EventEmitter {
 
   public isGDBRunning(): boolean {
     return this.gdbStarted && this.isRunning;
+  }
+
+  public getProgramOutput(): string {
+    return this.programOutput;
   }
 
   /**
@@ -225,52 +287,37 @@ export class GDBAdapter extends EventEmitter {
    */
   public sendCommand(
     command: string,
-    flags: GDBCommandFlag): Promise<string>
+    flags: GDBCommandFlag = GDBCommandFlag.noFlags): Promise<GDBMIOutput>
   {
-    return new Promise<string>((resolve, reject) => {
-      if ( !this.isGDBRunning() || !this.mpGDBProcess ) {
-        reject(new Error(`GDB: Not running.`));
-        return;
+    return new Promise<GDBMIOutput>((resolve, reject) => {
+      if ( !this.isGDBRunning() || !this.gdbProcess ) {
+        return reject(new Error(`GDB: Not running.`));
       }
 
       this.token += 1;
       const cmd = new GDBMICommand(flags, `${this.token}${command}`);
 
-      const onExited = () => {
-        const response = this.mStandardOutputBuffer;
-        logger.debug(`\n${response}`);
-        this.mStandardOutputBuffer = "";
-        // This will leak event listener for 'completed', but who cares...
-        resolve(response);
-      };
-      this.once('exited', onExited);
-
       // Resolve when GDB command completed.
       this.once('completed', () => {
-        const response = this.mStandardOutputBuffer;
-        logger.debug(`\n${response}`);
-        this.mStandardOutputBuffer = "";
-        logger.info(`GDB: Event listener count 'completed' ${this.listenerCount('completed')}`);
         logger.info(`GDB: Finished command "${cmd.mCommand}"`);
-        this.removeListener('exited', onExited);
-        resolve(response);
+        this.gdbmiCommandOutput = resolve;
       });
 
       // Log command
       logger.info(`GDB: Run command "${cmd.mCommand}"`);
-
       // Pass command to GDB
-      this.mpGDBProcess.stdin!.write(`${cmd.mCommand}\r\n`);
+      this.gdbProcess.stdin!.write(`${cmd.mCommand}\r\n`);
+
+      if (command === '-gdb-exit') {
+        resolve({ type: GDBMIOutputType.noneOutput, miOutOfBandRecordList: [] });
+      }
     });
   }
 
   /**
-   *
+   * Sets up the GDB (GNU Debugger) environment with various configurations before starting the actual debugging process.
    */
-  async handleGDBProcessStartedHelper(): Promise<void> {
-    // Create the temporary path
-    //const tmpPath: string = Utilities.tempDirectory();
-
+  async setupGDB(): Promise<void> {
     // Set the GDB environment before starting the actual debugging
     // Sets the confirm on/off. Off disables confirmation requests. On enables confirmation requests.
     await this.sendCommand(CommandFactory.gdbSet("confirm off"), GDBCommandFlag.nonCriticalResponse);
@@ -296,16 +343,15 @@ export class GDBAdapter extends EventEmitter {
      * is unlimited.
      */
     // TODO: Make this an option in the final extension
-    const numberOfElements: number = 200;
+    const numberOfElements: number = 0;
     await this.sendCommand(CommandFactory.gdbSet(`print elements ${numberOfElements}`), GDBCommandFlag.nonCriticalResponse);
 
     // Set the inferior arguments.
     // GDB changes the program arguments if we pass them through --args e.g -override=variableFilter=.*
-    await this.sendCommand(CommandFactory.gdbSet(`args ${this.mInferiorArguments.join(" ")}`), GDBCommandFlag.nonCriticalResponse);
+    await this.sendCommand(CommandFactory.gdbSet(`args ${this.inferiorArguments.join(" ")}`), GDBCommandFlag.nonCriticalResponse);
 
     // Insert breakpoints
     await this.insertCatchOMCBreakpoint();
-    await this.insertBreakpoints();
   }
 
   /**
@@ -316,31 +362,44 @@ export class GDBAdapter extends EventEmitter {
   }
 
   /**
-   * Insert all breakpoints from VSCode.
+   * Get the result record from the GDBMIOutput.
+   *
+   * @param gdbmiOutput GDBMIOutput object.
+   * @returns The result record if available, otherwise undefined.
    */
-  async insertBreakpoints(): Promise<void> {
-  //  //const breakpoints: BreakpointTreeItem[] = MainWindow.instance().getBreakpointsWidget().getBreakpointsTreeModel().getRootBreakpointTreeItem().getChildren();
-  //  // TODO: Get breakpoints from VSCode
-  //  const breakpoints: BreakpointTreeItem[] = [];
-  //  for (const pBreakpoint of breakpoints) {
-  //    this.insertBreakpoint(pBreakpoint);
-  //  }
+  public getGDBMIResultRecord(gdbmiOutput: GDBMIOutput) {
+    if (gdbmiOutput.type === GDBMIOutputType.resultRecordOutput) {
+      return gdbmiOutput.miResultRecord;
+    }
+    return undefined;
   }
 
   /**
-   * Sends the -break-insert command to GDB.
+   * Get the result from the GDBMIResult array.
    *
-   * @param pBreakpointTreeItem - pointer to BreakpointTreeItem
+   * @param variable The variable to search for.
+   * @param gdbmiResults Array of GDBMIResult.
+   * @returns The result if found, otherwise undefined.
    */
-  //insertBreakpoint(pBreakpointTreeItem: BreakpointTreeItem): void {
-  //  // TODO: Get file name, line number, ... from VSCode
-  //  const fileName = "";
-  //  const lineNumber = 0;
-  //  const isDisabled = false;
-  //  const condition = undefined;
-  //  const ignoreCount = 0;
-  //  const command = CommandFactory.breakInsert(
-  //    fileName, lineNumber, isDisabled, condition, ignoreCount);
-  //  this.sendCommand(command, pBreakpointTreeItem, this.insertBreakpointCB);
-  //}
+  public getGDBMIResult(variable: string, gdbmiResults: GDBMIResult[]) {
+    for (const result of gdbmiResults) {
+      if (result.variable === variable) {
+        return result;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Get the constant value from the GDBMIResult.
+   *
+   * @param results Array of GDBMIResult.
+   * @returns The constant value if found, otherwise undefined.
+   */
+  public getGDBMIConstantValue(gdbmiResult: GDBMIResult): string {
+    if (gdbmiResult) {
+      return gdbmiResult.miValue.value;
+    }
+    return "";
+  }
 }

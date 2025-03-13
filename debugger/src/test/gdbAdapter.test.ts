@@ -33,13 +33,14 @@
  *
  */
 
-import assert from 'assert';
+import * as assert from 'assert';
 import { exec } from 'child_process';
 import * as process from 'process';
 
-import { GDBAdapter, GDBCommandFlag } from '../gdb/gdbAdapter';
+import { GDBAdapter } from '../gdb/gdbAdapter';
 import * as CommandFactory from '../gdb/commandFactory';
 import { setLogLevel } from '../util/logger';
+import { GDBMIOutputType } from '../parser/gdbParser';
 
 async function which(programName: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
@@ -76,40 +77,44 @@ async function getOMCAndGDB(): Promise<[string, string]> {
 }
 
 describe('GDBAdapter', () => {
-  let adapter: GDBAdapter;
-
-  afterEach(async () => {
-    if (adapter) {
-      await adapter.quit();
-    }
-  });
-
   it('Start and stop GDBAdapter with omc', async () => {
     setLogLevel('warning');
 
-    adapter = new GDBAdapter();
+    const adapter = new GDBAdapter();
     const [omcExecutable, gdbExecutable] = await getOMCAndGDB();
     await adapter.launch(omcExecutable, __dirname, [], gdbExecutable);
-    assert(adapter.isGDBRunning(), "Assert GDB is running.");
+    assert.equal(adapter.isGDBRunning(), true, "Assert GDB is running.");
     await adapter.quit();
-    assert(!adapter.isGDBRunning(), "Assert GDB is not running any more.");
+    assert.equal(adapter.isGDBRunning(), false, "Assert GDB is not running any more.");
   }).timeout("10s");
 
-  it('Run gdb omc with "r --version"', async () => {
+  it('Run GDBAdapter with omc --version', async () => {
     setLogLevel('warning');
-    adapter = new GDBAdapter();
+    const adapter = new GDBAdapter();
     const [omcExecutable, gdbExecutable] = await getOMCAndGDB();
     await adapter.launch(omcExecutable, __dirname, [], gdbExecutable);
-    assert(adapter.isGDBRunning(), "Assert GDB is running.");
+    assert.equal(adapter.isGDBRunning(), true, "Assert GDB is running.");
 
-    const flags = GDBCommandFlag.noFlags;
-    await adapter.sendCommand(CommandFactory.gdbSet("args --version"), flags);
-    const response = await adapter.sendCommand(CommandFactory.execRun(), flags);
-    // Check version string is in response and gdb did exit normally.
-    assert.match(response, /v[0-9]+.[0-9]+.[0-9](?:-dev)/);
-    assert.ok(response.includes('stopped,reason="exited-normally"'));
+    const gdbmiOutput = await adapter.sendCommand(CommandFactory.gdbSet("args --version"));
+    assert.equal(gdbmiOutput.type, GDBMIOutputType.resultRecordOutput, `Expected output type ResultRecordOutput got ${gdbmiOutput.type}`);
+    assert.equal(gdbmiOutput.miResultRecord?.cls, "done", `Expected result class "done" got ${gdbmiOutput.miResultRecord?.cls}`);
 
+    await adapter.sendCommand(CommandFactory.execRun());
     await adapter.quit();
-    assert(!adapter.isGDBRunning(), "Assert GDB is not running any more.");
+    const response = adapter.getProgramOutput();
+    // Check version string is in response.
+    assert.ok(response.startsWith("OpenModelica"), "Response should start with 'OpenModelica'");
+    assert.equal(adapter.isGDBRunning(), false, "Assert GDB is not running any more.");
+  }).timeout("10s");
+
+  it('Run GDBAdapter with omc and setupGDB', async () => {
+    setLogLevel('warning');
+    const adapter = new GDBAdapter();
+    const [omcExecutable, gdbExecutable] = await getOMCAndGDB();
+    await adapter.launch(omcExecutable, __dirname, [], gdbExecutable);
+    assert.equal(adapter.isGDBRunning(), true, "Assert GDB is running.");
+    await adapter.setupGDB();
+    await adapter.quit();
+    assert.equal(adapter.isGDBRunning(), false, "Assert GDB is not running any more.");
   }).timeout("10s");
 });

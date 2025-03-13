@@ -11,7 +11,8 @@
   },
   "publisher": "OpenModelica",
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Debuggers"
   ],
   "keywords": [
     "modelica",
@@ -27,81 +28,16 @@
   },
   "activationEvents": [
     "onLanguage:metamodelica",
-    "onDebugResolve:mock",
-    "onDebugDynamicConfigurations:mock"
+    "onDebugResolve:metamodelica-dbg"
   ],
   "main": "./out/client",
   "contributes": {
     "languages": [
       {
         "id": "metamodelica",
-        "aliases": [
-          "MetaModelica",
-          "metamodelica"
-        ],
         "extensions": [
           ".mo"
         ]
-      },
-      {
-        "id": "openmodelica-script",
-        "aliases": [
-          "OpenModelica-Script",
-          "OpenModelica Script"
-        ],
-        "extensions": [
-          ".mos"
-        ]
-      }
-    ],
-    "menus": {
-      "editor/title/run": [
-        {
-          "command": "extension.metamodelica-language-server.runEditorContents",
-          "when": "resourceLangId == openmodelica-script",
-          "group": "navigation@1"
-        },
-        {
-          "command": "extension.metamodelica-language-server.debugEditorContents",
-          "when": "resourceLangId == openmodelica-script",
-          "group": "navigation@2"
-        }
-      ],
-      "commandPalette": [
-        {
-          "command": "extension.metamodelica-language-server.debugEditorContents",
-          "when": "resourceLangId == openmodelica-script"
-        },
-        {
-          "command": "extension.metamodelica-language-server.runEditorContents",
-          "when": "resourceLangId == openmodelica-script"
-        }
-      ],
-      "debug/variables/context": [
-        {
-          "command": "extension.metamodelica-language-server.toggleFormatting",
-          "when": "debugType == 'mock' && debugProtocolVariableMenuContext == 'simple'"
-        }
-      ]
-    },
-    "commands": [
-      {
-        "command": "extension.metamodelica-language-server.debugEditorContents",
-        "title": "Debug Script",
-        "category": "MetaModelica Debug",
-        "enablement": "!inDebugMode",
-        "icon": "$(debug-alt)"
-      },
-      {
-        "command": "extension.metamodelica-language-server.runEditorContents",
-        "title": "Run Script",
-        "category": "MetaModelica Debug",
-        "enablement": "!inDebugMode",
-        "icon": "$(play)"
-      },
-      {
-        "command": "extension.metamodelica-language-server.toggleFormatting",
-        "title": "Toggle between decimal and hex formatting"
       }
     ],
     "breakpoints": [
@@ -116,28 +52,35 @@
           "metamodelica"
         ],
         "label": "MetaModelica Debug",
-        "program": "./out/debugger.js",
-        "runtime": "node",
         "configurationAttributes": {
           "launch": {
             "required": [
-              "program"
+              "program",
+              "gdb"
             ],
             "properties": {
+              "gdb": {
+                "type": "string",
+                "description": "Absolute path to GDB executable.",
+                "default": "gdb"
+              },
               "program": {
                 "type": "string",
                 "description": "Absolute path to OpenModelica Compiler executable omc.",
                 "default": "${workspaceFolder}/build_cmake/install_cmake/bin/omc"
               },
               "arguments": {
-                "type": "string[]",
-                "description": "Arguments to omc. E.g. MOS file",
-                "default": "[\"path/to/debug.mos\"]"
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Arguments to omc. e.g., MOS file",
+                "default": ["script.mos"]
               },
-              "gdb": {
+              "cwd": {
                 "type": "string",
-                "description": "Absolute path to GDB executable.",
-                "default": "gdb"
+                "description": "Absolute path to working directory.",
+                "default": "${workspaceFolder}"
               },
               "stopOnEntry": {
                 "type": "boolean",
@@ -148,50 +91,33 @@
                 "type": "boolean",
                 "description": "Enable logging of the Debug Adapter Protocol.",
                 "default": true
-              },
-              "noDebug": {
-                "type": "boolean",
-                "description": "Run without debugging. If not specifier debug.",
-                "default": false
-              },
-              "compileError": {
-                "type": "string",
-                "description": "Simulates a compile error in 'launch' request.",
-                "enum": [
-                  "default",
-                  "show",
-                  "hide"
-                ],
-                "enumDescriptions": [
-                  "default: show fake compile error to user",
-                  "show fake compile error to user",
-                  "do not show fake compile error to user"
-                ]
               }
             }
           }
         },
         "initialConfigurations": [
           {
-            "name": "(omc) Launch",
-            "type": "metamodelica",
+            "name": "MetaModelica Debug Launch Configuration",
+            "type": "metamodelica-dbg",
             "request": "launch",
-            "program": "omc",
             "gdb": "gdb",
-            "mosFile": "${file}"
+            "program": "omc",
+            "arguments": [],
+            "cwd": "${workspaceFolder}"
           }
         ],
         "configurationSnippets": [
           {
-            "label": "MetaModelica Debug: Launch",
-            "description": "A new configuration for 'debugging' a OpenModelica scripting (.mos) file.",
+            "label": "MetMetaModelica Debug Launch Configuration",
+            "description": "A new configuration for 'debugging' the OpenModelica compiler.",
             "body": {
-              "name": "(omc) Launch",
+              "name": "MetaModelica Debug Launch Configuration",
               "type": "metamodelica-dbg",
               "request": "launch",
-              "program": "omc",
               "gdb": "gdb",
-              "mosFile": "${workspaceFolder}/file.mos"
+              "program": "omc",
+              "arguments": [],
+              "cwd": "${workspaceFolder}"
             }
           }
         ]

@@ -33,218 +33,63 @@
  *
  */
 
-import path from 'path';
-import fs from 'fs';
 import { DebugProtocol } from '@vscode/debugprotocol';
 
-import { isMetaModelicaFile } from '../util/util';
-
-export class BreakpointMapping {
-  //readonly metaModelicaSourceFile: DebugProtocol.Source;
-  readonly metaModelicaBreakpoints: DebugProtocol.Breakpoint[];
-
-  readonly cSourceFile: DebugProtocol.Source;
-  readonly cBreakpoints: DebugProtocol.Breakpoint[];
-
-  private parentBreakpointHandler: BreakpointHandler;
-
-  constructor (parent: BreakpointHandler, metaModelicaFile: DebugProtocol.Source, cFile: DebugProtocol.Source) {
-    this.parentBreakpointHandler = parent;
-    //this.metaModelicaSourceFile = metaModelicaFile;
-    this.cSourceFile = cFile;
-    this.cSourceFile.sources = [metaModelicaFile];
-
-    this.metaModelicaBreakpoints = [];
-    this.cBreakpoints = [];
-  }
-
-  /**
-   * Get all C and MetaModelica breakpoints.
-   *
-   * @returns Array of breakpoints
-   */
-  getAllBreakpoints(): DebugProtocol.Breakpoint[] {
-    return this.metaModelicaBreakpoints.concat(this.cBreakpoints);
-  }
-
-  /**
-   * Add MetaModelica and corresponding C breakpoint to breakpoint mapping.
-   *
-   * @param metaModelicaBreakpoint
-   */
-  async addBreakpoint(metaModelicaBreakpoint: DebugProtocol.Breakpoint): Promise<DebugProtocol.Breakpoint[]> {
-    const cBreakpoints: DebugProtocol.Breakpoint[] = [];
-    const startLine = metaModelicaBreakpoint.line;
-    if(!startLine) {
-      console.error("addBreakpoint: No start line in MetaModelica breakpoiont");
-      return [];
-    }
-    const endLine = metaModelicaBreakpoint.endLine || startLine;
-    const lines = await this.findCorrespondingLine(startLine, endLine);
-    for (const line of lines) {
-      const cBreakpoint = {
-        id: this.parentBreakpointHandler.getNewId(),
-        verified: false,
-        source: this.cSourceFile,
-        line: line
-      } as DebugProtocol.Breakpoint;
-
-      this.metaModelicaBreakpoints.push(metaModelicaBreakpoint);
-      this.cBreakpoints.push(cBreakpoint);
-      cBreakpoints.push(cBreakpoint);
-    }
-
-    return cBreakpoints;
-  }
-
-  async findCorrespondingLine(startLine: number, endLine: number): Promise<number[]> {
-    if (!this.cSourceFile || !this.cSourceFile.path) {
-      console.error("findCorrespondingLine: C file not available.");
-      return [];
-    }
-
-    try {
-        const data = await fs.promises.readFile(this.cSourceFile.path, 'utf8');
-        const lines = data.split('\n');
-
-        // Regular expression to match lines starting with '#line N'
-        // TODO: Ensure next string matches MetaModelica file
-        const lineRegex = /^#line (\d+) "/;
-        let matchedLines: { lineNumber: number, referenceLine: number }[] = [];
-
-        // Iterate over lines
-        lines.forEach((line: string, index: number) => {
-          // Check if the line is within range
-          const match = line.match(lineRegex);
-          if (match) {
-            const referenceLine: number = parseInt(match[1]);
-            if (startLine <= referenceLine && referenceLine <= endLine) {
-              matchedLines.push({lineNumber: index + 1, referenceLine: referenceLine});
-            }
-          }
-        });
-        if (matchedLines.length === 0) {
-          console.error("findCorrespondingLine: Couldn't find any corresponding lines.");
-          return [];
-        }
-
-        matchedLines = matchedLines.sort((a,b) => a.referenceLine - b.referenceLine);
-        const firstReferenceLine = matchedLines[0].referenceLine;
-        matchedLines = matchedLines.filter((l) => {
-          return l.referenceLine === firstReferenceLine;
-        });
-
-        return matchedLines.map(i => i.lineNumber);
-    } catch (err) {
-      console.error(`Error reading file: ${err}`);
-      return [];
-    }
-  }
-}
-
+/**
+ * Class responsible for handling breakpoints in the debugger.
+ */
 export class BreakpointHandler {
-  /** Path to OpenModelica/build_cmake */
-  private buildDirectoryRoot: string;
-  /** Path to OpenModelica/build_cmake/OMCompiler/Compiler/c_files */
-  private compilerCFilesRoot: string;
+  private breakpoints: DebugProtocol.Breakpoint[] = [];
 
-  private count: number = 0;
-
-  /** Mapping from MetaModelica to C files */
-  private metaModelicaToCUriMap: Map<string, BreakpointMapping>;
-
-  constructor(openModelicaRootDir) {
-    this.buildDirectoryRoot = openModelicaRootDir;
-    this.compilerCFilesRoot = path.join(this.buildDirectoryRoot, "build_cmake", "OMCompiler", "Compiler", "c_files");
-
-    this.metaModelicaToCUriMap = new Map<string, BreakpointMapping>();
-  }
-
-  getMetaModelicaFiles(): string[] {
-    return Array.from(this.metaModelicaToCUriMap.keys());
-  }
-
-  getCorrespondingCFile(metaModelicaFile: string): DebugProtocol.Source | undefined {
-    const mapping = this.metaModelicaToCUriMap.get(metaModelicaFile);
-    if (!mapping) {
-      return undefined;
-    }
-    return mapping.cSourceFile;
+  constructor() {
   }
 
   /**
+   * Retrieves all breakpoints for a given source.
    *
-   * @returns Array of breakpoints
+   * @param source - The source for which to retrieve breakpoints.
+   * @returns An array of breakpoints associated with the given source.
    */
-  getAllBreakpoints(): DebugProtocol.Breakpoint[] {
-    const breakpoints: DebugProtocol.Breakpoint[] = [];
-    for (const key of this.metaModelicaToCUriMap.keys()) {
-      const mapping = this.metaModelicaToCUriMap.get(key)!;
-      const list = mapping.getAllBreakpoints();
-      breakpoints.push(...list);
-    }
-    return breakpoints;
-  }
-
-  getNewId(): number {
-    this.count++;
-    return this.count;
+  public getBreakpoints(source: DebugProtocol.Source): DebugProtocol.Breakpoint[] {
+    return this.breakpoints.filter(breakpoint => breakpoint.source === source);
   }
 
   /**
-   * Add MetaModelica file to handler.
+   * Retrieves the IDs of all breakpoints for a given file path.
    *
-   * Initialize empty breakpoint mapping.
-   *
-   * @param metaModelicaFile  MetaModelica file.
+   * @param path - The file path for which to retrieve breakpoint IDs.
+   * @returns An array of breakpoint IDs associated with the given file path.
    */
-  async addFile(metaModelicaFile: string) {
-    if (this.metaModelicaToCUriMap.has(metaModelicaFile)) {
-      return;
-    }
-    const cFile = await this.findCFile(metaModelicaFile);
-    this.metaModelicaToCUriMap.set(metaModelicaFile,
-      new BreakpointMapping(
-        this,
-        {path: metaModelicaFile} as DebugProtocol.Source,
-        {path: cFile} as DebugProtocol.Source
-    ));
+  public getBreakpointIds(path: string): number[] {
+    return this.breakpoints
+      .filter(breakpoint => breakpoint.source?.path === path)
+      .map(breakpoint => breakpoint.id)
+      .filter((id): id is number => id !== undefined);
   }
 
   /**
-   * Add MetaModelica source breakpoint.
+   * Deletes breakpoints by their IDs.
    *
-   * Add MetaModelica file if not already in map.
-   *
-   * @param metaModelicaBreakpoint  MetaModelica breakpoint.
-   * @returns                       Corresponding C breakpoint.
+   * @param ids - An array of breakpoint IDs to delete.
    */
-  async addSourceBreakpoint(metaModelicaBreakpoint: DebugProtocol.Breakpoint): Promise<DebugProtocol.Breakpoint[]> {
-    if( metaModelicaBreakpoint.source?.path === undefined) {
-      console.error("addSourceBreakpoint: No MetaModelica source path defined in break point.");
-      return [];
-    }
-
-    await this.addFile(metaModelicaBreakpoint.source.path);
-    const mapping = this.metaModelicaToCUriMap.get(metaModelicaBreakpoint.source.path)!;
-    return mapping.addBreakpoint(metaModelicaBreakpoint);
+  public deleteBreakpointsByIds(ids: number[]): void {
+    this.breakpoints = this.breakpoints.filter(breakpoint => breakpoint.id !== undefined && !ids.includes(breakpoint.id));
   }
 
   /**
-   * Find C source file corresponding to MetaModelica source file.
+   * Adds a new breakpoint.
    *
-   * @param metaModelicaFile  MetaModelica file.
-   * @returns                 Absolute path to C file.
+   * @param id - The ID of the new breakpoint.
+   * @param source - The source file of the new breakpoint.
+   * @param line - The line number of the new breakpoint.
    */
-  private async findCFile(metaModelicaFile: string): Promise<string> {
-    if (!isMetaModelicaFile(metaModelicaFile)) {
-      throw new Error(`Can't add file ${metaModelicaFile}, it's not a MetaModelica file.`);
-    }
-    let name: string = path.basename(metaModelicaFile);
-    name = name.split('.').shift() || name ;
-    const cFile = path.join(this.compilerCFilesRoot, name + ".c");
-
-    // TODO: Check if file exists
-    return cFile;
+  public addBreakpoint(id: number, source: DebugProtocol.Source, line: number): void {
+    const breakpoint: DebugProtocol.Breakpoint = {
+      id: id,
+      source: source,
+      line: line,
+      verified: true
+    };
+    this.breakpoints.push(breakpoint);
   }
 }

@@ -36,123 +36,632 @@
 import Parser from 'web-tree-sitter';
 import * as fs from 'fs';
 import * as path from 'path';
-import { emitWarning } from 'process';
+import { logger } from '../util/logger';
 
-const resultClassString = ['done', 'running', 'connected', 'error', 'exit'] as const;
-export type ResultClass = (typeof resultClassString)[number];
+export interface GDBMIOutput {
+  type: GDBMIOutputType;
+  miOutOfBandRecordList: GDBMIOutOfBandRecord[];
+  miResultRecord?: GDBMIResultRecord;
+}
 
-const asyncClassString = ["stopped", "breakpoint-created", "breakpoint-deleted", "breakpoint-modified", "cmd-param-changed", "library-loaded", "library-unloaded", "memory-changed", "record-started", "record-stopped", "running", "thread-created", "thread-exited", "thread-group-added", "thread-group-exited", "thread-group-removed", "thread-group-started", "thread-selected", "traceframe-changed", "tsv-created", "tsv-deleted", "tsv-modified"];
-export type AsyncClass = (typeof asyncClassString)[number];
+export enum GDBMIOutputType {
+  noneOutput = "NoneOutput",
+  resultRecordOutput = "ResultRecordOutput",
+  outOfBandRecordOutput = "OutOfBandRecordOutput"
+}
 
-class GDBMITreeQueries {
-  private asyncClassQuerry: Parser.Query;
-  private resultClassQuerry: Parser.Query;
+export interface GDBMIOutOfBandRecord {
+  type: GDBMIOutOfBandRecordType;
+  miAsyncRecord?: GDBMIAsyncRecord;
+  miStreamRecord?: GDBMIStreamRecord;
+}
 
-  constructor(language: Parser.Language) {
-    this.asyncClassQuerry = language.query('(AsyncClass) @asyncClass');
-    this.resultClassQuerry = language.query('(ResultClass) @resultClass');
-  }
+export enum GDBMIOutOfBandRecordType {
+  noneRecord = "NoneRecord",
+  asyncRecord = "AsyncRecord",
+  streamRecord = "StreamRecord"
+}
 
-  getAsyncClasses(tree: Parser.Tree): AsyncClass[]  {
-    const classes: AsyncClass[] = [];
-    const captures = this.asyncClassQuerry.captures(tree.rootNode);
-      for (const capture of captures ) {
-        classes.push(capture.node.text as AsyncClass);
-      }
-    return classes;
-  }
+export interface GDBMIAsyncRecord {
+  type: GDBMIAsyncRecordType;
+  miExecAsyncOutput?: GDBMIExecAsyncOutput;
+  miStatusAsyncOutput?: GDBMIStatusAsyncOutput;
+  miNotifyAsyncOutput?: GDBMINotifyAsyncOutput;
+}
 
-  getResultClasses(tree: Parser.Tree): ResultClass[] {
-    const classes: ResultClass[] = [];
-    const captures = this.resultClassQuerry.captures(tree.rootNode);
-    for (const capture of captures ) {
-      classes.push(capture.node.text as ResultClass);
-    }
-    return classes;
-  }
+export enum GDBMIAsyncRecordType {
+  execAsyncOutput = "ExecAsyncOutput",
+  statusAsyncOutput = "StatusAsyncOutput",
+  notifyAsyncOutput = "NotifyAsyncOutput"
+}
+
+export interface GDBMIExecAsyncOutput {
+  miAsyncOutput?: GDBMIAsyncOutput;
+}
+
+export interface GDBMIStatusAsyncOutput {
+  miAsyncOutput?: GDBMIAsyncOutput;
+}
+
+export interface GDBMINotifyAsyncOutput {
+  miAsyncOutput?: GDBMIAsyncOutput;
+}
+
+export interface GDBMIAsyncOutput {
+  asyncClass: string;
+  miResult: GDBMIResult;
+}
+
+export interface GDBMIStreamRecord {
+  type: GDBMIStreamRecordType;
+  value: string;
+}
+
+export enum GDBMIStreamRecordType {
+  consoleStream = "ConsoleStream",
+  targetStream = "TargetStream",
+  logStream = "LogStream"
+}
+
+export interface GDBMIResultRecord {
+  token: number;
+  cls: string;
+  miResultsList: GDBMIResult[];
+  consoleStreamOutput: string;
+  logStreamOutput: string;
+}
+
+export interface GDBMIResult {
+  variable: string;
+  miValue: GDBMIValue;
+}
+
+export interface GDBMIValue {
+  type: GDBMIValueType;
+  value: string;
+  miTuple?: GDBMITuple;
+  miList?: GDBMIList;
+}
+
+export enum GDBMIValueType {
+  noneValue = "NoneValue",
+  constantValue = "ConstantValue",
+  tupleValue = "TupleValue",
+  listValue = "ListValue"
+}
+
+export interface GDBMITuple {
+  miResultsList: GDBMIResult[];
+}
+
+export interface GDBMIList {
+  type: GDBMIListType;
+  miValuesList: GDBMIValue[];
+  miResultsList: GDBMIResult[];
+}
+
+export enum GDBMIListType {
+  noneList = "NoneList",
+  valuesList = "ValuesList",
+  resultsList = "ResultsList"
 }
 
 export class GDBMIParser {
   private parser: Parser | undefined = undefined;
   private tree: Parser.Tree | undefined = undefined;
-  private queries: GDBMITreeQueries | undefined = undefined;
 
   async initialize() {
     this.parser = await initializeGdbMiParser();
-    this.queries = new GDBMITreeQueries(this.parser.getLanguage());
   }
 
-  parse(input: string) {
-    if (!this.parse) {
+  parse(input: string): GDBMIOutput {
+    if (!this.parser) {
       throw new Error("GDB/MI parser undefined. Call initialize first.");
     }
 
     this.tree = this.parser!.parse(input);
+    // walkTree and print it for debugging purpose
+    this.walkTree(this.tree.rootNode);
+    // return GDBMIOutput
+    return this.createGDBMIOutput();
   }
 
   /**
-   * Get async classes from tree.
+   * Recursively walks through the syntax tree starting from the given node,
+   * logging the type and text of each node with indentation corresponding to its depth.
    *
-   * @returns List of async class types.
+   * @param node - The current syntax node to process.
+   * @param depth - The current depth in the tree, used for indentation. Defaults to 0.
    */
-  getAsyncClasses(): AsyncClass[] {
+  private walkTree(node: Parser.SyntaxNode, depth: number = 0) {
+    const indent = '  '.repeat(depth);
+    logger.debug(`${indent}${node.type}: ${node.text}`);
+
+    for (let i = 0; i < node.childCount; i++) {
+      const childNode = node.child(i);
+      if (childNode) {
+        this.walkTree(childNode, depth + 1);
+      }
+    }
+  }
+
+  /**
+   * Creates a GDB/MI output object by parsing the internal parser tree.
+   *
+   * This method should be called after the `parse` method to ensure the parser tree is defined.
+   * It traverses the tree to construct a `GDBMIOutput` object based on the types of nodes found.
+   *
+   * @throws {Error} If the parser tree is undefined.
+   * @returns {GDBMIOutput} The constructed GDB/MI output object.
+   *
+   * The method identifies `ResultRecord` and `OutOfBandRecord` nodes to populate the output object.
+   */
+  private createGDBMIOutput(): GDBMIOutput {
     if (!this.tree) {
       throw new Error("GDB/MI parser tree undefined. Call parse first.");
     }
 
-    return this.queries!.getAsyncClasses(this.tree);
-  }
+    const output: GDBMIOutput = {
+      type: GDBMIOutputType.noneOutput,
+      miOutOfBandRecordList: []
+    };
 
-  /**
-   * Get result classes from tree.
-   *
-   * @returns List of result class types.
-   */
-  getResultClasses(): ResultClass[] {
-    if (!this.tree) {
-      throw new Error("GDB/MI parser tree undefined. Call parse first.");
-    }
+    const rootNode = this.tree.rootNode;
 
-    return this.queries!.getResultClasses(this.tree);
-  }
+    // rootNode is Stream and its child node is Ouput
+    // For example,
+    // (Stream
+    //   (Output
+    //     (ResultRecord
+    //       (Token)
+    //       (ResultClass)
+    //       (Result
+    //         (Variable
+    //           (Identifier))
+    //         (Value
+    //           (Const
+    //             (CString
+    //               (CStringCharacterSequence))))))))
 
-  /**
-   * Check of GDB/MI response is completed.
-   *
-   * @param response  Response from GDB/MI
-   * @returns         True if compelted, false if ends with "running".
-   */
-  responseCompleted(response: string): boolean {
-    this.parse(response);
-
-    // Assuming if we can't parse the response it's not finished
-    if ( this.tree!.rootNode.hasError ) {
-      return false;
-    }
-
-    const resultClass = this.getResultClasses();
-
-    if (resultClass) {
-      switch (resultClass[resultClass.length - 1]) {
-        case "running":
-          return false;
-        default:
-          return true;
+    if (rootNode && rootNode.type === "Stream") {
+      const outputNode = rootNode.child(0);
+      if (outputNode && outputNode.type === "Output") {
+        for (let i = 0; i < outputNode.childCount; i++) {
+          const childNode = outputNode.child(i);
+          if (childNode) {
+            switch (childNode.type) {
+              case 'ResultRecord':
+                output.type = GDBMIOutputType.resultRecordOutput;
+                output.miResultRecord = this.parseResultRecord(childNode);
+                break;
+              case 'OutOfBandRecord':
+                output.type = GDBMIOutputType.outOfBandRecordOutput;
+                output.miOutOfBandRecordList.push(this.parseOutOfBandRecord(childNode));
+                break;
+              default:
+                break;
+            }
+          }
+        }
       }
     }
 
-    const asyncClasses = this.getAsyncClasses();
-    if (asyncClasses.length > 0) {
-      switch (asyncClasses[asyncClasses.length - 1]) {
-        case "running":
-          return false;
-        default:
-          return true;
+    return output;
+  }
+
+  /**
+   * Parses a GDB/MI result record from the given syntax node.
+   *
+   * @param node - The syntax node to parse.
+   * @returns A `GDBMIResultRecord` object containing the parsed data.
+   *
+   * The function initializes a `GDBMIResultRecord` object with default values and iterates over the child nodes of the given syntax node.
+   * Depending on the type of each child node, it updates the corresponding properties of the `GDBMIResultRecord` object:
+   * - 'Token': Parses the token as an integer and assigns it to the `token` property.
+   * - 'ResultClass': Assigns the text of the node to the `cls` property.
+   * - 'Result': Parses the result node and adds it to the `miResultsList` array.
+   * - 'ConsoleStreamOutput': Assigns the text of the node to the `consoleStreamOutput` property.
+   * - 'LogStreamOutput': Assigns the text of the node to the `logStreamOutput` property.
+   */
+  private parseResultRecord(node: Parser.SyntaxNode): GDBMIResultRecord {
+    const resultRecord: GDBMIResultRecord = {
+      token: 0,
+      cls: '',
+      miResultsList: [],
+      consoleStreamOutput: '',
+      logStreamOutput: ''
+    };
+
+    for (let i = 0; i < node.childCount; i++) {
+      const childNode = node.child(i);
+      if (childNode) {
+        switch (childNode.type) {
+          case 'Token':
+            resultRecord.token = parseInt(childNode.text, 10);
+            break;
+          case 'ResultClass':
+            resultRecord.cls = childNode.text;
+            break;
+          case 'Result':
+            resultRecord.miResultsList.push(this.parseResult(childNode));
+            break;
+          case 'ConsoleStreamOutput':
+            resultRecord.consoleStreamOutput = childNode.text;
+            break;
+          case 'LogStreamOutput':
+            resultRecord.logStreamOutput = childNode.text;
+            break;
+          default:
+            break;
+        }
       }
     }
 
-    emitWarning("GDB Parser: Can't tell if command is completed. Assuming it is.");
-    return true;
+    return resultRecord;
+  }
+
+  /**
+   * Parses a given SyntaxNode to extract a GDB/MI Out-Of-Band Record.
+   *
+   * This method iterates over the child nodes of the provided SyntaxNode and
+   * determines the type of Out-Of-Band Record based on the child node type.
+   * It supports parsing of 'AsyncRecord' and 'StreamRecord' types.
+   *
+   * @param node - The SyntaxNode to be parsed.
+   * @returns A GDBMIOutOfBandRecord object containing the parsed information.
+   */
+  private parseOutOfBandRecord(node: Parser.SyntaxNode): GDBMIOutOfBandRecord {
+    const outOfBandRecord: GDBMIOutOfBandRecord = {
+      type: GDBMIOutOfBandRecordType.noneRecord
+    };
+
+    for (let i = 0; i < node.childCount; i++) {
+      const childNode = node.child(i);
+      if (childNode) {
+        switch (childNode.type) {
+          case 'AsyncRecord':
+            outOfBandRecord.type = GDBMIOutOfBandRecordType.asyncRecord;
+            outOfBandRecord.miAsyncRecord = this.parseAsyncRecord(childNode);
+            break;
+          case 'StreamRecord':
+            outOfBandRecord.type = GDBMIOutOfBandRecordType.streamRecord;
+            outOfBandRecord.miStreamRecord = this.parseStreamRecord(childNode);
+            break;
+          default:
+            break;
+        }
+      }
+    }
+
+    return outOfBandRecord;
+  }
+
+  /**
+   * Parses a GDB/MI async record from the given syntax node.
+   *
+   * @param node - The syntax node to parse.
+   * @returns A `GDBMIAsyncRecord` object containing the parsed async record.
+   *
+   * The function iterates over the child nodes of the provided syntax node and
+   * sets the `type` and corresponding output properties of the `GDBMIAsyncRecord` object
+   * based on the type of each child node. The possible types are 'ExecAsyncOutput',
+   * 'StatusAsyncOutput', and 'NotifyAsyncOutput'.
+   */
+  private parseAsyncRecord(node: Parser.SyntaxNode): GDBMIAsyncRecord {
+    const asyncRecord: GDBMIAsyncRecord = {
+      type: GDBMIAsyncRecordType.execAsyncOutput
+    };
+
+    for (let i = 0; i < node.childCount; i++) {
+      const childNode = node.child(i);
+      if (childNode) {
+        switch (childNode.type) {
+          case 'ExecAsyncOutput':
+            asyncRecord.type = GDBMIAsyncRecordType.execAsyncOutput;
+            asyncRecord.miExecAsyncOutput = this.parseExecAsynOutput(childNode);
+            break;
+          case 'StatusAsyncOutput':
+            asyncRecord.type = GDBMIAsyncRecordType.statusAsyncOutput;
+            asyncRecord.miStatusAsyncOutput = this.parseStatusAsyncOutput(childNode);
+            break;
+          case 'NotifyAsyncOutput':
+            asyncRecord.type = GDBMIAsyncRecordType.notifyAsyncOutput;
+            asyncRecord.miNotifyAsyncOutput = this.parseNotifyAsyncOutput(childNode);
+            break;
+          default:
+            break;
+        }
+      }
+    }
+
+    return asyncRecord;
+  }
+
+  /**
+   * Parses a GDB/MI exec async output from the given syntax node.
+   *
+   * @param node - The syntax node to parse.
+   * @returns A `GDBMIExecAsyncOutput` object containing the parsed exec async output.
+   */
+  private parseExecAsynOutput(node: Parser.SyntaxNode): GDBMIExecAsyncOutput {
+    const execAsyncOutput: GDBMIExecAsyncOutput = {};
+
+    for (let i = 0; i < node.childCount; i++) {
+      const childNode = node.child(i);
+      if (childNode) {
+        switch (childNode.type) {
+          case 'AsyncOutput':
+            execAsyncOutput.miAsyncOutput = this.parseAsyncOutput(childNode);
+            break;
+          default:
+            break;
+        }
+      }
+    }
+
+    return execAsyncOutput;
+  }
+
+  /**
+   * Parses a GDB/MI status async output from the given syntax node.
+   *
+   * @param node - The syntax node to parse.
+   * @returns A `GDBMIStatusAsyncOutput` object containing the parsed status async output.
+   */
+  private parseStatusAsyncOutput(node: Parser.SyntaxNode): GDBMIStatusAsyncOutput {
+    const statusAsyncOutput: GDBMIStatusAsyncOutput = {};
+
+    for (let i = 0; i < node.childCount; i++) {
+      const childNode = node.child(i);
+      if (childNode) {
+        switch (childNode.type) {
+          case 'AsyncOutput':
+            statusAsyncOutput.miAsyncOutput = this.parseAsyncOutput(childNode);
+            break;
+          default:
+            break;
+        }
+      }
+    }
+
+    return statusAsyncOutput;
+  }
+
+  /**
+   * Parses a GDB/MI notify async output from the given syntax node.
+   *
+   * @param node - The syntax node to parse.
+   * @returns A `GDBMINotifyAsyncOutput` object containing the parsed notify async output.
+   */
+  private parseNotifyAsyncOutput(node: Parser.SyntaxNode): GDBMINotifyAsyncOutput {
+    const notifyAsyncOutput: GDBMINotifyAsyncOutput = {};
+
+    for (let i = 0; i < node.childCount; i++) {
+      const childNode = node.child(i);
+      if (childNode) {
+        switch (childNode.type) {
+          case 'AsyncOutput':
+            notifyAsyncOutput.miAsyncOutput = this.parseAsyncOutput(childNode);
+            break;
+          default:
+            break;
+        }
+      }
+    }
+
+    return notifyAsyncOutput;
+  }
+
+  /**
+   * Parses a GDB/MI async output from the given syntax node.
+   *
+   * @param node - The syntax node to parse.
+   * @returns A `GDBMIAsyncOutput` object containing the parsed async output.
+   */
+  private parseAsyncOutput(node: Parser.SyntaxNode): GDBMIAsyncOutput {
+    const asyncOutput: GDBMIAsyncOutput = {
+      asyncClass: '',
+      miResult: {
+        variable: '',
+        miValue: {
+          type: GDBMIValueType.noneValue,
+          value: ''
+        }
+      }
+    };
+
+    for (let i = 0; i < node.childCount; i++) {
+      const childNode = node.child(i);
+      if (childNode) {
+        switch (childNode.type) {
+          case 'AsyncClass':
+            asyncOutput.asyncClass = childNode.text;
+            break;
+          case 'Result':
+            asyncOutput.miResult = this.parseResult(childNode);
+            break;
+          default:
+            break;
+        }
+      }
+    }
+
+    return asyncOutput;
+  }
+
+   /**
+   * Parses a given syntax node to extract a GDBMIResult.
+   *
+   * This method iterates over the children of the provided syntax node and
+   * extracts the variable and value information to construct a GDBMIResult object.
+   *
+   * @param node - The syntax node to parse.
+   * @returns A GDBMIResult object containing the parsed variable and value.
+   */
+  private parseResult(node: Parser.SyntaxNode): GDBMIResult {
+    const result: GDBMIResult = {
+      variable: '',
+      miValue: {
+        type: GDBMIValueType.noneValue,
+        value: ''
+      }
+    };
+
+    for (let i = 0; i < node.childCount; i++) {
+      const childNode = node.child(i);
+      if (childNode) {
+        switch (childNode.type) {
+          case 'Variable':
+            result.variable = childNode.text;
+            break;
+          case 'Value':
+            result.miValue = this.parseValue(childNode);
+            break;
+          default:
+            break;
+        }
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Parses a given syntax node and returns a GDBMIValue object.
+   *
+   * This method iterates over the children of the provided syntax node and
+   * determines the type of value based on the child node's type. It supports
+   * parsing of 'Constant', 'Tuple', and 'List' types.
+   *
+   * @param node - The syntax node to parse.
+   * @returns A GDBMIValue object representing the parsed value.
+   */
+  private parseValue(node: Parser.SyntaxNode): GDBMIValue {
+    const value: GDBMIValue = {
+      type: GDBMIValueType.noneValue,
+      value: ''
+    };
+
+    for (let i = 0; i < node.childCount; i++) {
+      const childNode = node.child(i);
+      if (childNode) {
+        switch (childNode.type) {
+          case 'Const':
+            value.type = GDBMIValueType.constantValue;
+            value.value = childNode.text.replace(/^"(.*)"$/, '$1');
+            break;
+          case 'Tuple':
+            value.type = GDBMIValueType.tupleValue;
+            value.miTuple = this.parseTuple(childNode);
+            break;
+          case 'List':
+            value.type = GDBMIValueType.listValue;
+            value.miList = this.parseList(childNode);
+            break;
+          default:
+            break;
+        }
+      }
+    }
+
+    return value;
+  }
+
+  /**
+   * Parses a given SyntaxNode representing a GDB/MI tuple and converts it into a GDBMITuple object.
+   *
+   * @param node - The SyntaxNode to parse, which should represent a GDB/MI tuple.
+   * @returns A GDBMITuple object containing the parsed results.
+   */
+  private parseTuple(node: Parser.SyntaxNode): GDBMITuple {
+    const tuple: GDBMITuple = {
+      miResultsList: []
+    };
+
+    for (let i = 0; i < node.childCount; i++) {
+      const childNode = node.child(i);
+      if (childNode && childNode.type === 'Result') {
+        tuple.miResultsList.push(this.parseResult(childNode));
+      }
+    }
+
+    return tuple;
+  }
+
+  /**
+   * Parses a list node from the GDB/MI output and returns a GDBMIList object.
+   *
+   * @param node - The syntax node representing the list to be parsed.
+   * @returns A GDBMIList object containing the parsed values and results.
+   */
+  private parseList(node: Parser.SyntaxNode): GDBMIList {
+    const list: GDBMIList = {
+      type: GDBMIListType.noneList,
+      miValuesList: [],
+      miResultsList: []
+    };
+
+    for (let i = 0; i < node.childCount; i++) {
+      const childNode = node.child(i);
+      if (childNode) {
+        switch (childNode.type) {
+          case 'Value':
+            list.type = GDBMIListType.valuesList;
+            list.miValuesList.push(this.parseValue(childNode));
+            break;
+          case 'Result':
+            list.type = GDBMIListType.resultsList;
+            list.miResultsList.push(this.parseResult(childNode));
+            break;
+          default:
+            break;
+        }
+      }
+    }
+
+    return list;
+  }
+
+  /**
+   * Parses a GDB/MI stream record from the given syntax node.
+   *
+   * @param node - The syntax node to parse.
+   * @returns A `GDBMIStreamRecord` object containing the parsed stream record.
+   *
+   * The function iterates over the child nodes of the provided syntax node and
+   * sets the `type` and `value` properties of the `GDBMIStreamRecord` object
+   * based on the type of each child node. The possible types are 'ConsoleStream',
+   * 'TargetStream', and 'LogStream'.
+   */
+  private parseStreamRecord(node: Parser.SyntaxNode): GDBMIStreamRecord {
+    const streamRecord: GDBMIStreamRecord = {
+      type: GDBMIStreamRecordType.consoleStream,
+      value: ''
+    };
+
+    for (let i = 0; i < node.childCount; i++) {
+      const childNode = node.child(i);
+      if (childNode) {
+        switch (childNode.type) {
+          case 'ConsoleStream':
+            streamRecord.type = GDBMIStreamRecordType.consoleStream;
+            streamRecord.value = childNode.text;
+            break;
+          case 'TargetStream':
+            streamRecord.type = GDBMIStreamRecordType.targetStream;
+            streamRecord.value = childNode.text;
+            break;
+          case 'LogStream':
+            streamRecord.type = GDBMIStreamRecordType.logStream;
+            streamRecord.value = childNode.text;
+            break;
+          default:
+            break;
+        }
+      }
+    }
+
+    return streamRecord;
   }
 }
 

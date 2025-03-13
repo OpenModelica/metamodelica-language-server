@@ -33,42 +33,61 @@
  *
  */
 
-import path from 'path';
-import assert from 'assert';
-
 import { BreakpointHandler } from '../breakpoints/breakpoints';
 import { DebugProtocol } from '@vscode/debugprotocol';
-
-const openModelicaRootDir = path.join(__dirname, 'data');
-const metaModelicaFile = path.join(__dirname, 'data/OMCompiler/Compiler/Main/Main.mo');
-const cFile = path.join(__dirname, 'data/build_cmake/OMCompiler/Compiler/c_files/Main.c');
+import assert from 'assert';
 
 describe('Breakpoints', () => {
-  it('BreakpointHandler', async () => {
-    const handler = new BreakpointHandler(openModelicaRootDir);
+  it('Add a new breakpoint', () => {
+    const handler = new BreakpointHandler();
+    const source: DebugProtocol.Source = { path: 'test/path' };
+    handler.addBreakpoint(1, source, 10);
 
-    await handler.addFile(metaModelicaFile);
-    const files = handler.getMetaModelicaFiles();
-    assert.deepStrictEqual(files, [metaModelicaFile]);
-    const correspondingCFile = handler.getCorrespondingCFile(metaModelicaFile);
-    assert.equal(cFile, correspondingCFile?.path);
+    const breakpoints = handler.getBreakpoints(source);
+    assert.strictEqual(breakpoints.length, 1);
+    assert.strictEqual(breakpoints[0].id, 1);
+    assert.strictEqual(breakpoints[0].line, 10);
   });
 
-  it('Add Breakpoint', async () => {
-    const handler = new BreakpointHandler(openModelicaRootDir);
+  it('Retrieve breakpoints by source', () => {
+    const handler = new BreakpointHandler();
+    const source1: DebugProtocol.Source = { path: 'test/path1' };
+    const source2: DebugProtocol.Source = { path: 'test/path2' };
+    handler.addBreakpoint(1, source1, 10);
+    handler.addBreakpoint(2, source2, 20);
 
-    const metaModelicaBreakPoint = {
-      verified: false,
-      source: {
-        name: "Main.mo",
-        path: metaModelicaFile,
-      } as DebugProtocol.Source,
-      line: 713,
-      column: 1,
-      endLine: 743,
-      endColumn: 9
-    } as DebugProtocol.Breakpoint;
-    const cBreakpoint = await handler.addSourceBreakpoint(metaModelicaBreakPoint);
-    assert.equal(cBreakpoint[0].line, 880);
+    const breakpoints1 = handler.getBreakpoints(source1);
+    const breakpoints2 = handler.getBreakpoints(source2);
+
+    assert.strictEqual(breakpoints1.length, 1);
+    assert.strictEqual(breakpoints1[0].id, 1);
+    assert.strictEqual(breakpoints1[0].line, 10);
+
+    assert.strictEqual(breakpoints2.length, 1);
+    assert.strictEqual(breakpoints2[0].id, 2);
+    assert.strictEqual(breakpoints2[0].line, 20);
+  });
+
+  it('Retrieve breakpoint IDs by file path', () => {
+    const handler = new BreakpointHandler();
+    const source: DebugProtocol.Source = { path: 'test/path' };
+    handler.addBreakpoint(1, source, 10);
+    handler.addBreakpoint(2, source, 20);
+
+    const ids = handler.getBreakpointIds('test/path');
+    assert.deepStrictEqual(ids, [1, 2]);
+  });
+
+  it('Delete breakpoints by IDs', () => {
+    const handler = new BreakpointHandler();
+    const source: DebugProtocol.Source = { path: 'test/path' };
+    handler.addBreakpoint(1, source, 10);
+    handler.addBreakpoint(2, source, 20);
+
+    handler.deleteBreakpointsByIds([1]);
+
+    const breakpoints = handler.getBreakpoints(source);
+    assert.strictEqual(breakpoints.length, 1);
+    assert.strictEqual(breakpoints[0].id, 2);
   });
 });

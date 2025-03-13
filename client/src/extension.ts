@@ -43,23 +43,14 @@ import {
   TransportKind
 } from 'vscode-languageclient/node';
 import { getFileExtension, getLanguage } from './getLanguage';
-import { fstat } from 'fs';
+import * as DebuggerExtension from '../../debugger/src/debugger';
 
 let client: LanguageClient;
 let metaModelicaDebugger: any;
 
 export async function activate(context: ExtensionContext) {
-
   // Activate Debugger
-  const debuggerModule = context.asAbsolutePath(
-    path.join('out', 'debugger.js')
-  );
-  if (!fs.existsSync(debuggerModule)) {
-    throw new Error(`Can't find debugger module in ${debuggerModule}`);
-  }
-  metaModelicaDebugger = await import(debuggerModule);
-  metaModelicaDebugger.activate(context);
-
+  DebuggerExtension.initialize(context);
   // Register event listener to set language for '.mo' files.
   const checkedFiles: { [id: string]: boolean} = {};
   workspace.onDidOpenTextDocument((document: TextDocument) => {
