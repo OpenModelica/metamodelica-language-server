@@ -8,7 +8,7 @@ const watchStr = watch ? ' watch ' : ' ';
 async function main() {
   // Build client
   const client = await esbuild.context({
-    entryPoints: ['./client/src/extension.ts'],
+    entryPoints: ['./src/client/extension.ts'],
     bundle: true,
     format: 'cjs',
     minify: production,
@@ -32,7 +32,7 @@ async function main() {
 
   // Build server
   const server = await esbuild.context({
-    entryPoints: ['./server/src/server.ts'],
+    entryPoints: ['./src/server/extension.ts'],
     bundle: true,
     format: 'cjs',
     minify: production,
@@ -68,7 +68,7 @@ const esbuildClientProblemMatcherPlugin = {
     build.onEnd(result => {
       result.errors.forEach(({ text, location }) => {
         console.error(`✘ Client${watchStr}build [ERROR] ${text}`);
-        if (location == null) {return;}
+        if (location === null) {return;}
         console.error(`    ${location.file}:${location.line}:${location.column}:`);
       });
       console.log(`Client${watchStr}build finished`);
@@ -85,7 +85,7 @@ const esbuildServerProblemMatcherPlugin = {
     build.onEnd(result => {
       result.errors.forEach(({ text, location }) => {
         console.error(`✘ Server${watchStr}build [ERROR] ${text}`);
-        if (location == null) {return;}
+        if (location === null) {return;}
         console.error(`    ${location.file}:${location.line}:${location.column}:`);
       });
       console.log(`Server${watchStr}build finished`);
@@ -103,6 +103,6 @@ main().catch(e => {
 if (!fs.existsSync('out')) {
   fs.mkdirSync('out');
 }
-fs.copyFileSync('./server/src/tree-sitter-metamodelica.wasm', './out/tree-sitter-metamodelica.wasm');
-fs.copyFileSync('./debugger/src/parser/tree-sitter-gdbmi.wasm', './out/tree-sitter-gdbmi.wasm');
-fs.copyFileSync('./server/node_modules/web-tree-sitter/tree-sitter.wasm', './out/tree-sitter.wasm');
+fs.copyFileSync('./src/server/tree-sitter-metamodelica.wasm', './out/tree-sitter-metamodelica.wasm');
+fs.copyFileSync('./src/debugger/parser/tree-sitter-gdbmi.wasm', './out/tree-sitter-gdbmi.wasm');
+fs.copyFileSync('./node_modules/web-tree-sitter/tree-sitter.wasm', './out/tree-sitter.wasm');

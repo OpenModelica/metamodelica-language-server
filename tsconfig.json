@@ -5,23 +5,33 @@
     "lib": [
       "es2022"
     ],
-    "outDir": "out",
-    "rootDir": "src",
-    "sourceMap": true
+    "outDir": "dist",
+    "rootDir": ".",
+    "esModuleInterop": true,
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "moduleResolution": "node",
+    "declaration": true,
+    "strict": true, /* enable all strict type-checking options */
+    /* Additional Checks */
+    // "noImplicitReturns": true, /* Report error when not all code paths in function return a value. */
+    // "noFallthroughCasesInSwitch": true, /* Report errors for fallthrough cases in switch statement. */
+    // "noUnusedParameters": true,  /* Report errors on unused parameters. */
+    "noImplicitAny": false,
+    "removeComments": false,
+    "noUnusedLocals": true,
+    "noImplicitThis": true,
+    "inlineSourceMap": false,
+    "preserveConstEnums": true,
+    "strictNullChecks": true,
+    "noUnusedParameters": false
   },
   "include": [
-    "src"
+    "src",
+    "test"
   ],
   "exclude": [
     "node_modules",
     ".vscode-test"
-  ],
-  "references": [
-    {
-      "path": "./client"
-    },
-    {
-      "path": "./server"
-    }
   ]
 }
