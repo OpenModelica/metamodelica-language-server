@@ -63,26 +63,7 @@ If you need more information start a discussion over at
 Found a bug or having issues? Open a
 [new issue](https://github.com/OpenModelica/metamodelica-language-server/issues/new/choose).
 
-## Structure
-
-```
-.
-├── src
-│   ├── client // Language Client
-│   │   └── extension.ts // Language Client entry point
-│   ├── server // Language Server
-│   │   └── extension.ts // Language Server entry point
-│   ├── debugger // MetaModelica debugger
-│   │   └── extension.ts // MetaModelica debugger entry point
-│   └── util
-├── test
-│   │   ├── client // End to End tests for Language Client
-│   │   ├── debugger // tests for MetaModelica debugger
-│   │   └── server // tests for Language Server
-└── package.json // The extension manifest.
-```
-
-## Building the Language Server
+## Build
 
 ### Dependencies
 
