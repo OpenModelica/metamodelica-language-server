@@ -24,7 +24,7 @@
   "icon": "images/Modelica_Language_margin.jpg",
   "bugs": "https://github.com/OpenModelica/metamodelica-language-server/issues",
   "engines": {
-    "vscode": "^1.75.0",
+    "vscode": "^1.88.0",
     "node": "22"
   },
   "activationEvents": [
@@ -164,7 +164,6 @@
     "run-script-os": "^1.1.6",
     "@types/vscode": "^1.88.0",
     "@vscode/test-electron": "^2.3.9",
-    "@types/glob": "^8.1.0",
     "glob": "^11.0.1",
     "axios": "^1.8.3",
     "@vscode/debugadapter": "^1.65.0",
