@@ -2,3 +2,6 @@
 metamodelica-language-server*.vsix
 node_modules/
 out/
+dist/
+tree-sitter-metamodelica.wasm
+tree-sitter-gdbmi.wasm

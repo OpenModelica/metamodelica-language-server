@@ -24,7 +24,8 @@
   "icon": "images/Modelica_Language_margin.jpg",
   "bugs": "https://github.com/OpenModelica/metamodelica-language-server/issues",
   "engines": {
-    "vscode": "^1.75.0"
+    "vscode": "^1.88.0",
+    "node": "22"
   },
   "activationEvents": [
     "onLanguage:metamodelica",
@@ -130,14 +131,24 @@
     "esbuild-watch": "node esbuild.config.js --watch",
     "test-compile": "tsc -b ./",
     "lint": "eslint ./client/src ./server/src ./debugger/src --ext .ts,.tsx",
-    "postinstall": "cd client && npm install && cd ../server && npm install && cd ../debugger && npm install && cd ..",
+    "tree-sitter-metamodelica": "cd src/server && node tree.sitter.metamodelica.download.js",
+    "tree-sitter-gdbmi": "cd node_modules/tree-sitter-gdbmi && npx tree-sitter generate && npx tree-sitter build --wasm --docker . && shx cp tree-sitter-gdbmi.wasm ../../src/debugger/parser",
+    "postinstall": "npm run tree-sitter-metamodelica && npm run tree-sitter-gdbmi",
     "test-compile-post": "run-script-os",
     "test-compile-post:win32": ".\\scripts\\e2e.bat",
     "test-compile-post:default": "sh ./scripts/e2e.sh",
     "test": "npm run test-compile && npm run test-compile-post",
-    "test:server": "cd server && npx mocha -r ts-node/register src/test/**/*.test.ts src/util/test/**/*.test.ts",
-    "test:debugger": "cd debugger && npx mocha -r ts-node/register src/test/**/*.test.ts",
+    "test:server": "cd test && npx mocha -r ts-node/register server/**/*.test.ts",
+    "test:debugger": "cd test && npx mocha -r ts-node/register debugger/**/*.test.ts",
     "all": "npm run postinstall && npm run esbuild && npm run lint && npm run test:server && npm run test:debugger && npm run test && npm run vscode:prepublish"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1",
+    "tree-sitter": "^0.21.1",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.11",
+    "web-tree-sitter": "^0.22.5",
+    "shx" : "^0.3.4"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.6",
@@ -150,6 +161,18 @@
     "npm-check-updates": "^16.14.18",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5",
-    "run-script-os": "^1.1.6"
+    "run-script-os": "^1.1.6",
+    "@types/vscode": "^1.88.0",
+    "@vscode/test-electron": "^2.3.9",
+    "glob": "^11.0.1",
+    "axios": "^1.8.3",
+    "@vscode/debugadapter": "^1.65.0",
+    "@vscode/debugadapter-testsupport": "^1.65.0",
+    "await-notify": "^1.0.1",
+    "base64-js": "^1.5.1",
+    "events": "^3.3.0",
+    "path-browserify": "^1.0.1",
+    "tree-sitter-cli": "^0.23.2",
+    "tree-sitter-gdbmi": "github:novafacing/tree-sitter-gdbmi"
   }
 }
