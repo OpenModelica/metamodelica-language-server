@@ -67,14 +67,19 @@ Found a bug or having issues? Open a
 
 ```
 .
-├── client // Language Client
-│   ├── src
-│   │   ├── test // End to End tests for Language Client / Server
+├── src
+│   ├── client // Language Client
 │   │   └── extension.ts // Language Client entry point
-├── package.json // The extension manifest.
-└── server // MetaModelica Language Server
-    └── src
-        └── server.ts // Language Server entry point
+│   ├── server // Language Server
+│   │   └── extension.ts // Language Server entry point
+│   ├── debugger // MetaModelica debugger
+│   │   └── extension.ts // MetaModelica debugger entry point
+│   └── util
+├── test
+│   │   ├── client // End to End tests for Language Client
+│   │   ├── debugger // tests for MetaModelica debugger
+│   │   └── server // tests for Language Server
+└── package.json // The extension manifest.
 ```
 
 ## Building the Language Server
