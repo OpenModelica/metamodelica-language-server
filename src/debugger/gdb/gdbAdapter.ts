@@ -36,11 +36,12 @@
 import { ChildProcess, spawn } from 'child_process';
 import { EventEmitter } from 'events';
 import { existsSync } from 'fs';
+import * as vscode from 'vscode';
 
 import * as CommandFactory from './commandFactory';
 import { logger } from '../../util/logger';
 import { GDBMIParser, GDBMIOutput,
-  GDBMIResult, GDBMIOutOfBandRecord, GDBMIAsyncOutput
+  GDBMIResult, GDBMIOutOfBandRecord, GDBMIAsyncOutput, GDBMIStreamRecordType
   } from '../parser/gdbParser';
 
 export enum GDBCommandFlag {
@@ -199,8 +200,7 @@ export class GDBAdapter extends EventEmitter {
               this.processGDBMIOutOfBandRecord(miOutOfBandRecord);
             }
           } else {
-            this.programOutput += response;
-            // todo
+            this.writeToDebugConsole(response);
           }
 
           if (this.gdbmiCommandOutput) {
@@ -227,6 +227,13 @@ export class GDBAdapter extends EventEmitter {
     });
   }
 
+  private writeToDebugConsole(output: string) {
+    this.programOutput += output;
+    const debugConsole = vscode.debug.activeDebugConsole;
+    // Use the appendLine method
+    debugConsole.appendLine(output);
+  }
+
   /**
    * Processes GDB/MI out-of-band records.
    *
@@ -249,8 +256,19 @@ export class GDBAdapter extends EventEmitter {
     } else if (outOfBandRecord.miStreamRecord) {
       // Handle stream records (e.g., console, target, or log output)
       const streamOutput = outOfBandRecord.miStreamRecord?.value;
-      if (streamOutput) {
-        this.programOutput += streamOutput;
+      switch (outOfBandRecord.miStreamRecord?.type) {
+        case GDBMIStreamRecordType.consoleStream:
+          // todo. Add configuration to show/hide console output
+          break;
+        case GDBMIStreamRecordType.targetStream:
+          this.writeToDebugConsole(streamOutput);
+          break;
+        case GDBMIStreamRecordType.logStream:
+          // todo. Add configuration to show/hide log output
+          break;
+        default:
+          logger.error(`GDB: Unknown stream record type: ${outOfBandRecord.miStreamRecord?.type}`);
+          break;
       }
     }
   }
