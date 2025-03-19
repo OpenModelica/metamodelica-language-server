@@ -52,8 +52,8 @@ import { DebugProtocol } from '@vscode/debugprotocol';
 import { GDBAdapter } from './gdb/gdbAdapter';
 import { BreakpointHandler } from './breakpoints/breakpoints';
 import * as CommandFactory from './gdb/commandFactory';
-import { setLogLevel, logger } from '../util/logger';
-// import { GDBMIOutputType, GDBMIValueType } from './parser/gdbParser';
+import { setLogLevel, logger, LOG_LEVELS } from '../util/logger';
+import * as path from 'path';
 
 /**
  * This interface describes the MetaModelica specific launch attributes (which
@@ -71,10 +71,8 @@ interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
   arguments: string[];
   /** Absolute path to the working directory of the program being debugged */
   cwd: string;
-  /** Automatically stop target after launch. If not specified, target does not stop. */
-  stopOnEntry?: boolean;
-  /** enable logging the Debug Adapter Protocol */
-  trace?: boolean;
+  /** logging for the Debug Adapter Protocol */
+  logLevel?: string;
 }
 
 interface IAttachRequestArguments extends ILaunchRequestArguments { }
@@ -86,7 +84,7 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
   private static threadID = 1;
 
   private gdbAdapter: GDBAdapter;
-  private breakpointHandler = new BreakpointHandler();
+  private breakpointHandler: BreakpointHandler;
 
   // private _variableHandles = new Handles<'locals' | 'globals' | RuntimeVariable>();
 
@@ -107,6 +105,7 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
     super();
 
     this.gdbAdapter = new GDBAdapter();
+    this.breakpointHandler = new BreakpointHandler();
 
     // setup event handlers
     // this._runtime.on('stopOnEntry', () => {
@@ -165,8 +164,6 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
    * to interrogate the features the debug adapter provides.
    */
   protected initializeRequest(response: DebugProtocol.InitializeResponse, args: DebugProtocol.InitializeRequestArguments): void {
-
-    console.log("initializeRequest", this.gdbAdapter.isGDBRunning());
     // build and return the capabilities of this debug adapter:
     response.body = response.body || {};
 
@@ -174,10 +171,8 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
     response.body.supportsConfigurationDoneRequest = true;
     // the adapter does not implements the restartRequest so the VSCode is doing the restart by doing a disconnectRequest and then a initializeRequest
     response.body.supportsRestartRequest = false;
-    response.body.supportSuspendDebuggee = true;
     response.body.supportTerminateDebuggee = true;
     response.body.supportsFunctionBreakpoints = true;
-    // response.body.supportsDelayedStackTraceLoading = true;
 
     this.sendResponse(response);
   }
@@ -188,9 +183,8 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
    */
   protected async configurationDoneRequest(response: DebugProtocol.ConfigurationDoneResponse, args: DebugProtocol.ConfigurationDoneArguments) {
     super.configurationDoneRequest(response, args);
-    console.log("configurationDoneRequest", this.gdbAdapter.isGDBRunning());
+    // run the debugged program when configuration is done
     await this.gdbAdapter.sendCommand(CommandFactory.execRun());
-    this.sendResponse(response);
   }
 
   protected disconnectRequest(response: DebugProtocol.DisconnectResponse, args: DebugProtocol.DisconnectArguments, request?: DebugProtocol.Request) {
@@ -203,22 +197,10 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
   }
 
   protected async launchRequest(response: DebugProtocol.LaunchResponse, args: ILaunchRequestArguments) {
-
-    console.log("launchRequest", this.gdbAdapter.isGDBRunning());
-    // make sure to 'Stop' the buffered logging if 'trace' is not set
-    setLogLevel(args.trace ? 'info' : 'warning');
-
-    // wait 1 second until configuration has finished (and configurationDoneRequest has been called)
-    //await this._configurationDone.wait(1000);
-
-
-
-    //this.gdbAdapter.parse('8^done,bkpt={number="1",type="breakpoint",disp="keep",enabled="n",addr="<PENDING>",pending="\\\\\\"Catch.omc\\\\\\":1",times="0",original-location="\\\\\\"Catch.omc\\\\\\":1"}');
-
+    setLogLevel(LOG_LEVELS.includes(args.logLevel as any) ? args.logLevel as typeof LOG_LEVELS[number] : 'warning');
     // start the program in the runtime
     try {
       await this.gdbAdapter.launch(args.program, args.cwd, args.arguments, args.gdb);
-      console.log("launchRequest after GDB launch is done", this.gdbAdapter.isGDBRunning());
       if (this.gdbAdapter.isGDBRunning()) {
         await this.gdbAdapter.setupGDB();
         this.sendResponse(response);
@@ -236,14 +218,8 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
   }
 
   protected async setBreakPointsRequest(response: DebugProtocol.SetBreakpointsResponse, args: DebugProtocol.SetBreakpointsArguments): Promise<void> {
-
-    console.log("setBreakPointsRequest", this.gdbAdapter.isGDBRunning());
-
-    console.log("setBreakPointsRequest", args.source.path);
-
-    await this.gdbAdapter.sendCommand("-break-list");
-
     if (args.source.path) {
+      // first remove the breakpoints that belong to the source
       const breakpointNumbers = this.breakpointHandler.getBreakpointIds(args.source.path);
       logger.info(`breakpointNumbers ${breakpointNumbers}`);
       // clear all breakpoints for this file
@@ -256,11 +232,12 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
           this.breakpointHandler.deleteBreakpointsByIds(breakpointNumbers);
         }
       }
-
+      // insert new breakpoints
       const breakpoints = args.breakpoints || [];
       for (const bp of breakpoints) {
         logger.info(`Adding breakpoint at line: ${bp.line} at source ${args.source.path}`);
-        const gdbmiOutput = await this.gdbAdapter.sendCommand(CommandFactory.breakInsert(args.source.path.toString(), bp.line));
+        const fileName = path.basename(args.source.path);
+        const gdbmiOutput = await this.gdbAdapter.sendCommand(CommandFactory.breakInsert(fileName, bp.line));
         /**
          * If the breakpoint is successfully inserted then we get a result back as,
          *
@@ -278,34 +255,14 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
           const gdbmiResult = this.gdbAdapter.getGDBMIResult("number", gdbmiBreakpointResult.miValue.miTuple.miResultsList);
           const breakpointNumber = gdbmiResult ? this.gdbAdapter.getGDBMIConstantValue(gdbmiResult) : "";
             if (breakpointNumber) {
-              console.log(`breakpointNumber as string ${breakpointNumber}`);
-              console.log(`breakpointNumber as Number ${Number(breakpointNumber)}`);
               this.breakpointHandler.addBreakpoint(Number(breakpointNumber), args.source, bp.line);
             }
         }
       }
     }
 
-    await this.gdbAdapter.sendCommand("-break-list");
-
-    // const path = args.source.path as string;
-    // const clientLines = args.lines || [];
-
-    // clear all breakpoints for this file
-    // this._runtime.clearBreakpoints(path);
-
-    // set and verify breakpoint locations
-    // const actualBreakpoints0 = clientLines.map(async l => {
-    //   const { verified, line, id } = await this._runtime.setBreakPoint(path, this.convertClientLineToDebugger(l));
-    //   const bp = new Breakpoint(verified, this.convertDebuggerLineToClient(line)) as DebugProtocol.Breakpoint;
-    //   bp.id = id;
-    //   return bp;
-    // });
-    // const actualBreakpoints = await Promise.all<DebugProtocol.Breakpoint>(actualBreakpoints0);
-
-    // send back the actual breakpoint positions
+    // send back breakpoints response
     response.body = {
-      // breakpoints: actualBreakpoints
       breakpoints: this.breakpointHandler.getBreakpoints(args.source)
     };
     this.sendResponse(response);

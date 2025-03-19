@@ -34,7 +34,7 @@
  */
 
 import * as assert from 'assert';
-import { GDBMIOutputType, GDBMIParser } from '../../../src/debugger/parser/gdbParser';
+import { GDBMIParser } from '../../../src/debugger/parser/gdbParser';
 import { setLogLevel } from '../../../src/util/logger';
 
 describe('GDB/MI Parser', () => {
@@ -43,14 +43,12 @@ describe('GDB/MI Parser', () => {
     await gdbMiParser.initialize();
   });
 
-  it('Parse GDB/MI output', async () => {
+  it('Parse -break-insert output', async () => {
     setLogLevel("warning");
     const gdbMiParser = new GDBMIParser();
     await gdbMiParser.initialize();
-
-    let gdbmiOutput = gdbMiParser.parse('8^done,bkpt={number="1"}\n');
+    const gdbmiOutput = gdbMiParser.parse('8^done,bkpt={number="1"}\n');
     const breakpointOutput = {
-      type: 'ResultRecordOutput',
       miOutOfBandRecordList: [],
       miResultRecord: {
         token: 8,
@@ -59,7 +57,6 @@ describe('GDB/MI Parser', () => {
           {
             variable: 'bkpt',
             miValue: {
-              type: 'TupleValue',
               value: '',
               miTuple: {
                 miResultsList:
@@ -68,7 +65,7 @@ describe('GDB/MI Parser', () => {
                     variable: 'number',
                     miValue:
                     {
-                      type: 'ConstantValue', value: '1'
+                      value: '1'
                     }
                   }
                 ]
@@ -81,35 +78,41 @@ describe('GDB/MI Parser', () => {
       }
     };
     assert.deepEqual(gdbmiOutput, breakpointOutput);
+  }).timeout("2s");
 
-    gdbmiOutput = gdbMiParser.parse('10^running\n');
-    assert.equal(gdbmiOutput.type, GDBMIOutputType.resultRecordOutput, `Expected output type ResultRecordOutput got ${gdbmiOutput.type}`);
+  it('Parse -exec-run output', async () => {
+    const gdbMiParser = new GDBMIParser();
+    await gdbMiParser.initialize();
+    const gdbmiOutput = gdbMiParser.parse('10^running\n');
     assert.equal(gdbmiOutput.miResultRecord?.token, 10, `Expected token 10 got ${gdbmiOutput.miResultRecord?.token}`);
     assert.equal(gdbmiOutput.miResultRecord?.cls, "running", `Expected result class "running" got ${gdbmiOutput.miResultRecord?.cls}`);
+  }).timeout("2s");
 
-    gdbmiOutput = gdbMiParser.parse('*stopped,reason="exited-normally"\n');
+  it('Parse stop event output', async () => {
+    const gdbMiParser = new GDBMIParser();
+    await gdbMiParser.initialize();
+    const gdbmiOutput = gdbMiParser.parse('*stopped,reason="exited-normally"\n');
     const asyncOutput = {
-      type: 'OutOfBandRecordOutput',
       miOutOfBandRecordList:
       [
         {
-          type: 'AsyncRecord',
           miAsyncRecord:
           {
-            type: 'ExecAsyncOutput',
             miExecAsyncOutput:
             {
               miAsyncOutput:
               {
                 asyncClass: 'stopped',
-                miResult: {
-                  variable: 'reason',
-                  miValue:
+                miResult:
+                [
                   {
-                    type: 'ConstantValue',
-                    value: 'exited-normally'
+                    variable: 'reason',
+                    miValue:
+                    {
+                      value: 'exited-normally'
+                    }
                   }
-                }
+                ]
               }
             }
           }
