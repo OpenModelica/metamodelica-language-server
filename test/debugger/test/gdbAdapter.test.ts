@@ -40,7 +40,6 @@ import * as process from 'process';
 import { GDBAdapter } from '../../../src/debugger/gdb/gdbAdapter';
 import * as CommandFactory from '../../../src/debugger/gdb/commandFactory';
 import { setLogLevel } from '../../../src/util/logger';
-import { GDBMIOutputType } from '../../../src/debugger/parser/gdbParser';
 
 async function which(programName: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
@@ -96,7 +95,6 @@ describe('GDBAdapter', () => {
     assert.equal(adapter.isGDBRunning(), true, "Assert GDB is running.");
 
     const gdbmiOutput = await adapter.sendCommand(CommandFactory.gdbSet("args --version"));
-    assert.equal(gdbmiOutput.type, GDBMIOutputType.resultRecordOutput, `Expected output type ResultRecordOutput got ${gdbmiOutput.type}`);
     assert.equal(gdbmiOutput.miResultRecord?.cls, "done", `Expected result class "done" got ${gdbmiOutput.miResultRecord?.cls}`);
 
     await adapter.sendCommand(CommandFactory.execRun());

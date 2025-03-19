@@ -92,13 +92,14 @@ export function breakInsert(
   }
   if (condition !== "") {
     command.push("-c");
-    command.push(`\\"${condition}\\"`);
+    command.push(`"\\"${condition}\\""`);
   }
   if (ignoreCount > 0) {
     command.push("-i");
     command.push(ignoreCount.toString());
   }
-  command.push(`\\"${fileName}\\":${line}`);
+
+  command.push(`"\\"${fileName}\\":${line}"`);
   return command.join(" ");
 }
 

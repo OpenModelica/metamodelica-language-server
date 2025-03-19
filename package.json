@@ -83,15 +83,11 @@
                 "description": "Absolute path to working directory.",
                 "default": "${workspaceFolder}"
               },
-              "stopOnEntry": {
-                "type": "boolean",
-                "description": "Automatically stop target after launch. If not specified, target does not stop.",
-                "default": false
-              },
-              "trace": {
-                "type": "boolean",
-                "description": "Enable logging of the Debug Adapter Protocol.",
-                "default": true
+              "logLevel": {
+                "type": "string",
+                "description": "Logging level for the debugger",
+                "default": "warning",
+                "enum": ["debug", "log", "info", "warning", "error"]
               }
             }
           }
@@ -103,8 +99,9 @@
             "request": "launch",
             "gdb": "gdb",
             "program": "omc",
-            "arguments": [],
-            "cwd": "${workspaceFolder}"
+            "arguments": ["script.mos"],
+            "cwd": "${workspaceFolder}",
+            "logLevel": "info"
           }
         ],
         "configurationSnippets": [
@@ -117,8 +114,9 @@
               "request": "launch",
               "gdb": "gdb",
               "program": "omc",
-              "arguments": [],
-              "cwd": "${workspaceFolder}"
+              "arguments": ["script.mos"],
+              "cwd": "${workspaceFolder}",
+              "logLevel": "info"
             }
           }
         ]

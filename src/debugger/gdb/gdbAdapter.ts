@@ -39,7 +39,9 @@ import { existsSync } from 'fs';
 
 import * as CommandFactory from './commandFactory';
 import { logger } from '../../util/logger';
-import { GDBMIParser, GDBMIOutput, GDBMIOutputType, GDBMIOutOfBandRecordType, GDBMIAsyncRecordType, GDBMIResult } from '../parser/gdbParser';
+import { GDBMIParser, GDBMIOutput,
+  GDBMIResult, GDBMIOutOfBandRecord, GDBMIAsyncOutput
+  } from '../parser/gdbParser';
 
 export enum GDBCommandFlag {
   noFlags             = 0,
@@ -77,7 +79,7 @@ export class GDBAdapter extends EventEmitter {
 
   private token: number = 0;
   private standardOutputBuffer: string = ""; /* Buffer GDB machine interface output from STDOUT */
-  private gdbmiOutput: GDBMIOutput = { type: GDBMIOutputType.noneOutput, miOutOfBandRecordList: [] };
+  private gdbmiOutput: GDBMIOutput = { miOutOfBandRecordList: [] };
   private gdbmiCommandOutput?: (data: GDBMIOutput) => void;
   private programOutput: string = '';
 
@@ -182,29 +184,7 @@ export class GDBAdapter extends EventEmitter {
           this.gdbmiOutput = this.parser.parse(response + "\n");
           // console.log(response);
           // console.log(this.gdbmiOutput.type);
-          if (this.gdbmiOutput.type === GDBMIOutputType.outOfBandRecordOutput) {
-            for (const miOutOfBandRecord of this.gdbmiOutput.miOutOfBandRecordList) {
-              if (miOutOfBandRecord.type === GDBMIOutOfBandRecordType.asyncRecord) {
-                if (miOutOfBandRecord.miAsyncRecord?.type === GDBMIAsyncRecordType.execAsyncOutput) {
-                  if (miOutOfBandRecord.miAsyncRecord?.miExecAsyncOutput?.miAsyncOutput?.asyncClass === "stopped") {
-                    if (miOutOfBandRecord.miAsyncRecord.miExecAsyncOutput.miAsyncOutput.miResult.variable === "reason") {
-                      if (miOutOfBandRecord.miAsyncRecord.miExecAsyncOutput.miAsyncOutput.miResult.miValue.value === "exited-normally"
-                        || miOutOfBandRecord.miAsyncRecord.miExecAsyncOutput.miAsyncOutput.miResult.miValue.value === "exited") {
-                        this.emit('completed');
-                        this.emit('exit');
-                      } else if (miOutOfBandRecord.miAsyncRecord.miExecAsyncOutput.miAsyncOutput.miResult.miValue.value === "breakpoint-hit") {
-                        this.emit('completed');
-                        this.emit('stopOnBreakpoint');
-                      }
-                    }
-                  }
-                }
-              }
-            }
-            // console.log(this.gdbmiOutput);
-            // console.log(this.gdbmiOutput.miOutOfBandRecordList);
-            // todo
-          } else if (this.gdbmiOutput.type === GDBMIOutputType.resultRecordOutput) {
+          if (this.gdbmiOutput.miResultRecord) {
             // console.log(this.gdbmiOutput.miResultRecord?.cls);
             if (this.gdbmiOutput.miResultRecord?.cls === "done") {
               this.emit('completed');
@@ -214,7 +194,11 @@ export class GDBAdapter extends EventEmitter {
             } else {
               // console.log(this.gdbmiOutput.miResultRecord?.cls);
             }
-          } else { // GDBMIOutputType.noneOutput
+          } else if (this.gdbmiOutput.miOutOfBandRecordList.length > 0) {
+            for (const miOutOfBandRecord of this.gdbmiOutput.miOutOfBandRecordList) {
+              this.processGDBMIOutOfBandRecord(miOutOfBandRecord);
+            }
+          } else {
             this.programOutput += response;
             // todo
           }
@@ -241,6 +225,55 @@ export class GDBAdapter extends EventEmitter {
         reject(err);
       });
     });
+  }
+
+  /**
+   * Processes GDB/MI out-of-band records.
+   *
+   * @param outOfBandRecord The out-of-band record to process.
+   */
+  private processGDBMIOutOfBandRecord(outOfBandRecord: GDBMIOutOfBandRecord): void {
+    if (outOfBandRecord.miAsyncRecord) {
+      const asyncRecord = outOfBandRecord.miAsyncRecord;
+      if (asyncRecord.miExecAsyncOutput) {
+        if (asyncRecord.miExecAsyncOutput?.miAsyncOutput) {
+          this.processGDBMIAsyncOutput(asyncRecord.miExecAsyncOutput.miAsyncOutput);
+        } else if (asyncRecord.miStatusAsyncOutput?.miAsyncOutput) {
+          this.processGDBMIAsyncOutput(asyncRecord.miStatusAsyncOutput.miAsyncOutput);
+        } else if (asyncRecord.miNotifyAsyncOutput?.miAsyncOutput) {
+          this.processGDBMIAsyncOutput(asyncRecord.miNotifyAsyncOutput.miAsyncOutput);
+        } else {
+          logger.error("GDB: Unknown async record type.");
+        }
+      }
+    } else if (outOfBandRecord.miStreamRecord) {
+      // Handle stream records (e.g., console, target, or log output)
+      const streamOutput = outOfBandRecord.miStreamRecord?.value;
+      if (streamOutput) {
+        this.programOutput += streamOutput;
+      }
+    }
+  }
+
+  /**
+   * Processes GDB/MI async output.
+   *
+   * @param asyncOutput The async output to process.
+   */
+  private processGDBMIAsyncOutput(asyncOutput: GDBMIAsyncOutput): void {
+    const asyncClass = asyncOutput.asyncClass;
+    if (asyncClass === "stopped") {
+      const reasonResult = this.getGDBMIResult("reason", asyncOutput.miResult);
+      const reason = reasonResult ? this.getGDBMIConstantValue(reasonResult) : "";
+
+      if (reason === "exited-normally" || reason === "exited") {
+        this.emit("completed");
+        this.emit("exit");
+      } else if (reason === "breakpoint-hit") {
+        this.emit("completed");
+        this.emit("stopOnBreakpoint");
+      }
+    }
   }
 
   /**
@@ -309,7 +342,7 @@ export class GDBAdapter extends EventEmitter {
       this.gdbProcess.stdin!.write(`${cmd.mCommand}\r\n`);
 
       if (command === '-gdb-exit') {
-        resolve({ type: GDBMIOutputType.noneOutput, miOutOfBandRecordList: [] });
+        resolve({ miOutOfBandRecordList: [] });
       }
     });
   }
@@ -368,7 +401,7 @@ export class GDBAdapter extends EventEmitter {
    * @returns The result record if available, otherwise undefined.
    */
   public getGDBMIResultRecord(gdbmiOutput: GDBMIOutput) {
-    if (gdbmiOutput.type === GDBMIOutputType.resultRecordOutput) {
+    if (gdbmiOutput.miResultRecord) {
       return gdbmiOutput.miResultRecord;
     }
     return undefined;

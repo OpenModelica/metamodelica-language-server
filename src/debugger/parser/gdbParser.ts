@@ -39,40 +39,19 @@ import * as path from 'path';
 import { logger } from '../../util/logger';
 
 export interface GDBMIOutput {
-  type: GDBMIOutputType;
   miOutOfBandRecordList: GDBMIOutOfBandRecord[];
   miResultRecord?: GDBMIResultRecord;
 }
 
-export enum GDBMIOutputType {
-  noneOutput = "NoneOutput",
-  resultRecordOutput = "ResultRecordOutput",
-  outOfBandRecordOutput = "OutOfBandRecordOutput"
-}
-
 export interface GDBMIOutOfBandRecord {
-  type: GDBMIOutOfBandRecordType;
   miAsyncRecord?: GDBMIAsyncRecord;
   miStreamRecord?: GDBMIStreamRecord;
 }
 
-export enum GDBMIOutOfBandRecordType {
-  noneRecord = "NoneRecord",
-  asyncRecord = "AsyncRecord",
-  streamRecord = "StreamRecord"
-}
-
 export interface GDBMIAsyncRecord {
-  type: GDBMIAsyncRecordType;
   miExecAsyncOutput?: GDBMIExecAsyncOutput;
   miStatusAsyncOutput?: GDBMIStatusAsyncOutput;
   miNotifyAsyncOutput?: GDBMINotifyAsyncOutput;
-}
-
-export enum GDBMIAsyncRecordType {
-  execAsyncOutput = "ExecAsyncOutput",
-  statusAsyncOutput = "StatusAsyncOutput",
-  notifyAsyncOutput = "NotifyAsyncOutput"
 }
 
 export interface GDBMIExecAsyncOutput {
@@ -89,7 +68,7 @@ export interface GDBMINotifyAsyncOutput {
 
 export interface GDBMIAsyncOutput {
   asyncClass: string;
-  miResult: GDBMIResult;
+  miResult: GDBMIResult[];
 }
 
 export interface GDBMIStreamRecord {
@@ -117,17 +96,9 @@ export interface GDBMIResult {
 }
 
 export interface GDBMIValue {
-  type: GDBMIValueType;
   value: string;
   miTuple?: GDBMITuple;
   miList?: GDBMIList;
-}
-
-export enum GDBMIValueType {
-  noneValue = "NoneValue",
-  constantValue = "ConstantValue",
-  tupleValue = "TupleValue",
-  listValue = "ListValue"
 }
 
 export interface GDBMITuple {
@@ -135,15 +106,8 @@ export interface GDBMITuple {
 }
 
 export interface GDBMIList {
-  type: GDBMIListType;
   miValuesList: GDBMIValue[];
   miResultsList: GDBMIResult[];
-}
-
-export enum GDBMIListType {
-  noneList = "NoneList",
-  valuesList = "ValuesList",
-  resultsList = "ResultsList"
 }
 
 export class GDBMIParser {
@@ -202,7 +166,6 @@ export class GDBMIParser {
     }
 
     const output: GDBMIOutput = {
-      type: GDBMIOutputType.noneOutput,
       miOutOfBandRecordList: []
     };
 
@@ -231,11 +194,9 @@ export class GDBMIParser {
           if (childNode) {
             switch (childNode.type) {
               case 'ResultRecord':
-                output.type = GDBMIOutputType.resultRecordOutput;
                 output.miResultRecord = this.parseResultRecord(childNode);
                 break;
               case 'OutOfBandRecord':
-                output.type = GDBMIOutputType.outOfBandRecordOutput;
                 output.miOutOfBandRecordList.push(this.parseOutOfBandRecord(childNode));
                 break;
               default:
@@ -311,20 +272,16 @@ export class GDBMIParser {
    * @returns A GDBMIOutOfBandRecord object containing the parsed information.
    */
   private parseOutOfBandRecord(node: Parser.SyntaxNode): GDBMIOutOfBandRecord {
-    const outOfBandRecord: GDBMIOutOfBandRecord = {
-      type: GDBMIOutOfBandRecordType.noneRecord
-    };
+    const outOfBandRecord: GDBMIOutOfBandRecord = {};
 
     for (let i = 0; i < node.childCount; i++) {
       const childNode = node.child(i);
       if (childNode) {
         switch (childNode.type) {
           case 'AsyncRecord':
-            outOfBandRecord.type = GDBMIOutOfBandRecordType.asyncRecord;
             outOfBandRecord.miAsyncRecord = this.parseAsyncRecord(childNode);
             break;
           case 'StreamRecord':
-            outOfBandRecord.type = GDBMIOutOfBandRecordType.streamRecord;
             outOfBandRecord.miStreamRecord = this.parseStreamRecord(childNode);
             break;
           default:
@@ -348,24 +305,19 @@ export class GDBMIParser {
    * 'StatusAsyncOutput', and 'NotifyAsyncOutput'.
    */
   private parseAsyncRecord(node: Parser.SyntaxNode): GDBMIAsyncRecord {
-    const asyncRecord: GDBMIAsyncRecord = {
-      type: GDBMIAsyncRecordType.execAsyncOutput
-    };
+    const asyncRecord: GDBMIAsyncRecord = {};
 
     for (let i = 0; i < node.childCount; i++) {
       const childNode = node.child(i);
       if (childNode) {
         switch (childNode.type) {
           case 'ExecAsyncOutput':
-            asyncRecord.type = GDBMIAsyncRecordType.execAsyncOutput;
             asyncRecord.miExecAsyncOutput = this.parseExecAsynOutput(childNode);
             break;
           case 'StatusAsyncOutput':
-            asyncRecord.type = GDBMIAsyncRecordType.statusAsyncOutput;
             asyncRecord.miStatusAsyncOutput = this.parseStatusAsyncOutput(childNode);
             break;
           case 'NotifyAsyncOutput':
-            asyncRecord.type = GDBMIAsyncRecordType.notifyAsyncOutput;
             asyncRecord.miNotifyAsyncOutput = this.parseNotifyAsyncOutput(childNode);
             break;
           default:
@@ -461,13 +413,7 @@ export class GDBMIParser {
   private parseAsyncOutput(node: Parser.SyntaxNode): GDBMIAsyncOutput {
     const asyncOutput: GDBMIAsyncOutput = {
       asyncClass: '',
-      miResult: {
-        variable: '',
-        miValue: {
-          type: GDBMIValueType.noneValue,
-          value: ''
-        }
-      }
+      miResult: []
     };
 
     for (let i = 0; i < node.childCount; i++) {
@@ -478,7 +424,7 @@ export class GDBMIParser {
             asyncOutput.asyncClass = childNode.text;
             break;
           case 'Result':
-            asyncOutput.miResult = this.parseResult(childNode);
+            asyncOutput.miResult.push(this.parseResult(childNode));
             break;
           default:
             break;
@@ -502,7 +448,6 @@ export class GDBMIParser {
     const result: GDBMIResult = {
       variable: '',
       miValue: {
-        type: GDBMIValueType.noneValue,
         value: ''
       }
     };
@@ -538,7 +483,6 @@ export class GDBMIParser {
    */
   private parseValue(node: Parser.SyntaxNode): GDBMIValue {
     const value: GDBMIValue = {
-      type: GDBMIValueType.noneValue,
       value: ''
     };
 
@@ -547,15 +491,12 @@ export class GDBMIParser {
       if (childNode) {
         switch (childNode.type) {
           case 'Const':
-            value.type = GDBMIValueType.constantValue;
             value.value = childNode.text.replace(/^"(.*)"$/, '$1');
             break;
           case 'Tuple':
-            value.type = GDBMIValueType.tupleValue;
             value.miTuple = this.parseTuple(childNode);
             break;
           case 'List':
-            value.type = GDBMIValueType.listValue;
             value.miList = this.parseList(childNode);
             break;
           default:
@@ -596,7 +537,6 @@ export class GDBMIParser {
    */
   private parseList(node: Parser.SyntaxNode): GDBMIList {
     const list: GDBMIList = {
-      type: GDBMIListType.noneList,
       miValuesList: [],
       miResultsList: []
     };
@@ -606,11 +546,9 @@ export class GDBMIParser {
       if (childNode) {
         switch (childNode.type) {
           case 'Value':
-            list.type = GDBMIListType.valuesList;
             list.miValuesList.push(this.parseValue(childNode));
             break;
           case 'Result':
-            list.type = GDBMIListType.resultsList;
             list.miResultsList.push(this.parseResult(childNode));
             break;
           default:
