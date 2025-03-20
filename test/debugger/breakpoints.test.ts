@@ -33,12 +33,12 @@
  *
  */
 
-import { BreakpointHandler } from '../../../src/debugger/breakpoints/breakpoints';
+import { BreakpointHandler } from '../../src/debugger/breakpoints/breakpoints';
 import { DebugProtocol } from '@vscode/debugprotocol';
 import assert from 'assert';
 
-describe('Breakpoints', () => {
-  it('Add a new breakpoint', () => {
+suite('Breakpoints', () => {
+  test('Add a new breakpoint', () => {
     const handler = new BreakpointHandler();
     const source: DebugProtocol.Source = { path: 'test/path' };
     handler.addBreakpoint(1, source, 10);
@@ -49,7 +49,7 @@ describe('Breakpoints', () => {
     assert.strictEqual(breakpoints[0].line, 10);
   });
 
-  it('Retrieve breakpoints by source', () => {
+  test('Retrieve breakpoints by source', () => {
     const handler = new BreakpointHandler();
     const source1: DebugProtocol.Source = { path: 'test/path1' };
     const source2: DebugProtocol.Source = { path: 'test/path2' };
@@ -68,7 +68,7 @@ describe('Breakpoints', () => {
     assert.strictEqual(breakpoints2[0].line, 20);
   });
 
-  it('Retrieve breakpoint IDs by file path', () => {
+  test('Retrieve breakpoint IDs by file path', () => {
     const handler = new BreakpointHandler();
     const source: DebugProtocol.Source = { path: 'test/path' };
     handler.addBreakpoint(1, source, 10);
@@ -78,7 +78,7 @@ describe('Breakpoints', () => {
     assert.deepStrictEqual(ids, [1, 2]);
   });
 
-  it('Delete breakpoints by IDs', () => {
+  test('Delete breakpoints by IDs', () => {
     const handler = new BreakpointHandler();
     const source: DebugProtocol.Source = { path: 'test/path' };
     handler.addBreakpoint(1, source, 10);

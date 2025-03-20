@@ -37,9 +37,9 @@ import * as assert from 'assert';
 import { exec } from 'child_process';
 import * as process from 'process';
 
-import { GDBAdapter } from '../../../src/debugger/gdb/gdbAdapter';
-import * as CommandFactory from '../../../src/debugger/gdb/commandFactory';
-import { setLogLevel } from '../../../src/util/logger';
+import { GDBAdapter } from '../../src/debugger/gdb/gdbAdapter';
+import * as CommandFactory from '../../src/debugger/gdb/commandFactory';
+import { setLogLevel } from '../../src/util/logger';
 
 async function which(programName: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
@@ -75,8 +75,8 @@ async function getOMCAndGDB(): Promise<[string, string]> {
   return [omcExecutable, gdbExecutable];
 }
 
-describe('GDBAdapter', () => {
-  it('Start and stop GDBAdapter with omc', async () => {
+suite('GDBAdapter', () => {
+  test('Start and stop GDBAdapter with omc', async () => {
     setLogLevel('warning');
 
     const adapter = new GDBAdapter();
@@ -87,7 +87,7 @@ describe('GDBAdapter', () => {
     assert.equal(adapter.isGDBRunning(), false, "Assert GDB is not running any more.");
   }).timeout("10s");
 
-  it('Run GDBAdapter with omc --version', async () => {
+  test('Run GDBAdapter with omc --version', async () => {
     setLogLevel('warning');
     const adapter = new GDBAdapter();
     const [omcExecutable, gdbExecutable] = await getOMCAndGDB();
@@ -105,7 +105,7 @@ describe('GDBAdapter', () => {
     assert.equal(adapter.isGDBRunning(), false, "Assert GDB is not running any more.");
   }).timeout("10s");
 
-  it('Run GDBAdapter with omc and setupGDB', async () => {
+  test('Run GDBAdapter with omc and setupGDB', async () => {
     setLogLevel('warning');
     const adapter = new GDBAdapter();
     const [omcExecutable, gdbExecutable] = await getOMCAndGDB();

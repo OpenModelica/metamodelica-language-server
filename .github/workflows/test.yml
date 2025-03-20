@@ -50,13 +50,7 @@ jobs:
       - name: Build package
         run: npm run esbuild
 
-      - name: Test language server
-        run: npm run test:server
-
-      - name: Test debugger
-        run: npm run test:debugger
-
-      - name: Test language server client
+      - name: Tests
         run: |
           Xvfb -ac :99 -screen 0 1280x1024x16 &
           export DISPLAY=:99
