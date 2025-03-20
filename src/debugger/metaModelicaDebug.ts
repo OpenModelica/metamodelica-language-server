@@ -44,7 +44,8 @@
 
 import {
   LoggingDebugSession,
-  InitializedEvent, TerminatedEvent, StoppedEvent/* , BreakpointEvent, OutputEvent,
+  InitializedEvent, TerminatedEvent, StoppedEvent, Thread
+  /* , BreakpointEvent, OutputEvent,
   ProgressStartEvent, ProgressUpdateEvent, ProgressEndEvent, InvalidatedEvent,
   Thread, StackFrame, Scope, Source, Handles, Breakpoint, MemoryEvent */
 } from '@vscode/debugadapter';
@@ -76,28 +77,9 @@ interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
 }
 
 export class MetaModelicaDebugSession extends LoggingDebugSession {
-
-  // we don't support multiple threads, so we can use a hardcoded ID for the default thread
-  private static threadID = 1;
-
   private gdbAdapter: GDBAdapter;
   private breakpointHandler: BreakpointHandler;
 
-  // private _variableHandles = new Handles<'locals' | 'globals' | RuntimeVariable>();
-
-  // private _configurationDone = new Subject();
-
-  // private _cancellationTokens = new Map<number, boolean>();
-
-  // private _valuesInHex = false;
-  // private _useInvalidatedEvent = false;
-
-  // private _addressesInHex = true;
-
-  /**
-   * Creates a new debug adapter that is used for one debug session.
-   * We configure the default implementation of a debug adapter here.
-   */
   public constructor() {
     super();
 
@@ -111,8 +93,8 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
     // this._runtime.on('stopOnStep', () => {
     //   this.sendEvent(new StoppedEvent('step', MetaModelicaDebugSession.threadID));
     // });
-    this.gdbAdapter.on('stopOnBreakpoint', () => {
-      this.sendEvent(new StoppedEvent('breakpoint', MetaModelicaDebugSession.threadID));
+    this.gdbAdapter.on('stopOnBreakpoint', (threadID: number) => {
+      this.sendEvent(new StoppedEvent('breakpoint', threadID));
     });
     // this._runtime.on('stopOnDataBreakpoint', () => {
     //   this.sendEvent(new StoppedEvent('data breakpoint', MetaModelicaDebugSession.threadID));
@@ -324,11 +306,47 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
   //   this.sendResponse(response);
   // }
 
-  protected threadsRequest(response: DebugProtocol.ThreadsResponse): void {
-    console.log("threadsRequest", this.gdbAdapter.isGDBRunning());
+  protected async threadsRequest(response: DebugProtocol.ThreadsResponse): Promise<void> {
     if (this.gdbAdapter.isGDBRunning()) {
-      const response1 = this.gdbAdapter.sendCommand(CommandFactory.threadInfo());
-      logger.info(`threadsRequest: ${response1}`);
+      const threads = await this.gdbAdapter.sendCommand(CommandFactory.threadInfo());
+      /**
+       * -thread-info returns,
+       *
+       * ^done,threads=[
+       * {id="2",target-id="Thread 0xb7e14b90 (LWP 21257)",
+       *   frame={level="0",addr="0xffffe410",func="__kernel_vsyscall",
+       *     args=[]},state="running"},
+       * {id="1",target-id="Thread 0xb7e156b0 (LWP 21254)",
+       *   frame={level="0",addr="0x0804891f",func="foo",
+       *     args=[{name="i",value="10"}],
+       *     file="/tmp/a.c",fullname="/tmp/a.c",line="158"},
+       *     state="running"}],
+       * current-thread-id="1"
+       *
+       * Parse the result and set the breakpoint number which is needed when we have to delete the breakpoint.
+       */
+
+      const threadsArray: Thread[] = [];
+      const threadsResultRecord = this.gdbAdapter.getGDBMIResultRecord(threads);
+      const threadsResult = threadsResultRecord?.miResultsList ? this.gdbAdapter.getGDBMIResult("threads", threadsResultRecord.miResultsList) : undefined;
+
+      if (threadsResult && threadsResult.miValue.miList) {
+        threadsResult.miValue.miList.miValuesList.forEach(thread => {
+          if (thread.miTuple) {
+            const threadIdResult = this.gdbAdapter.getGDBMIResult("id", thread.miTuple.miResultsList);
+            const threadId = threadIdResult ? this.gdbAdapter.getGDBMIConstantValue(threadIdResult) : "";
+
+            const targetIdResult = this.gdbAdapter.getGDBMIResult("target-id", thread.miTuple.miResultsList);
+            const targetId = targetIdResult ? this.gdbAdapter.getGDBMIConstantValue(targetIdResult) : "";
+
+            threadsArray.push(new Thread(Number(threadId), targetId));
+          }
+        });
+      }
+
+      response.body = {
+        threads: threadsArray
+      };
       this.sendResponse(response);
     } else {
       this.sendResponse(response);
