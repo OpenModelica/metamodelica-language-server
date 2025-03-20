@@ -110,7 +110,7 @@ licensed under the MIT license and adapted to the MetaModelica language server.
 The debugger is based on [microsoft/vscode-mock-debug](https://github.com/microsoft/vscode-mock-debug) licensed under MIT.
 
 [OpenModelica/tree-sitter-metamodelica](https://github.com/OpenModelica/tree-sitter-metamodelica)
-v0.2.0 is included in this extension and is licensed under the [OSMC-PL
+is included in this extension and is licensed under the [OSMC-PL
 v1.8](./server/OSMC-License.txt).
 
 ## Acknowledgments

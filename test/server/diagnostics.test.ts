@@ -175,8 +175,8 @@ const expectedDiagnostics: LSP.Diagnostic[] = [
   }
 ];
 
-describe('getAllDeclarationsInTree', () => {
-  it('Definitions and types', async () => {
+suite('getAllDeclarationsInTree', () => {
+  test('Definitions and types', async () => {
     const parser = await initializeMetaModelicaParser();
     const tree = parser.parse(metaModelicaTestString);
     const queries = new MetaModelicaQueries(parser.getLanguage());

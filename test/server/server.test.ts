@@ -46,19 +46,19 @@ end M;
 `;
 const parsedMetaModelicaTestString = "(stored_definition classDefinition: (class_definition classType: (class_type model: (MODEL)) classSpecifier: (class_specifier identifier: (identifier (IDENT)) comment: (string_comment (STRING)) composition: (composition element: (element componentClause: (component_clause typeSpecifier: (type_specifier (T_REAL)) componentDeclaration: (component_declaration declaration: (declaration identifier: (IDENT) modification: (modification classModification: (class_modification (LPAR) argument: (argument (element_modification_or_replaceable (element_modification componentReference: (component_reference (IDENT)) modification: (modification (EQUALS) expression: (expression (simple_expression (UNSIGNED_INTEGER))))))) (COMMA) argument: (argument (element_modification_or_replaceable (element_modification componentReference: (component_reference (IDENT)) modification: (modification (EQUALS) expression: (expression (simple_expression (T_TRUE))))))) (RPAR)))) comment: (comment (string_comment (STRING)))))) element: (element componentClause: (component_clause typeSpecifier: (type_specifier namePath: (name_path identifier: (IDENT))) componentDeclaration: (component_declaration declaration: (declaration identifier: (IDENT) modification: (modification classModification: (class_modification (LPAR) argument: (argument (element_modification_or_replaceable (element_modification componentReference: (component_reference (IDENT))))) (RPAR)) (EQUALS) expression: (expression (simple_expression (MINUS) (UNSIGNED_REAL) (STAR) (component_reference__function_call componentReference: (component_reference (IDENT))))))))))) (T_END) endIdentifier: (identifier (IDENT)))))";
 
-describe('MetaModelica tree-sitter parser', () => {
-  it('Initialize parser', async () => {
+suite('MetaModelica tree-sitter parser', () => {
+  test('Initialize parser', async () => {
     await initializeMetaModelicaParser();
   });
 
-  it('Parse string', async () => {
+  test('Parse string', async () => {
     const parser = await initializeMetaModelicaParser();
     const tree = parser.parse(metaModelicaTestString);
     const parsedString = tree.rootNode.toString();
     assert.equal(parsedString, parsedMetaModelicaTestString);
   });
 
-  it('Identifier of type class', async () => {
+  test('Identifier of type class', async () => {
     const parser = await initializeMetaModelicaParser();
     const tree = parser.parse("type Temperature = Real(unit = \"K \");");
     const classNode = tree.rootNode.childForFieldName("classDefinitionList")!;

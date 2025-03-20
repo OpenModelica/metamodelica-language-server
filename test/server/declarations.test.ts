@@ -99,8 +99,8 @@ const expectedSymbols = [
   )
 ];
 
-describe('nodeToDocumentSymbol', () => {
-  it('type to TypeParameter', async () => {
+suite('nodeToDocumentSymbol', () => {
+  test('type to TypeParameter', async () => {
   const parser = await initializeMetaModelicaParser();
   const tree = parser.parse("type Temperature = Real(unit = \"K \");");
   const queries = new MetaModelicaQueries(parser.getLanguage());
@@ -111,8 +111,8 @@ describe('nodeToDocumentSymbol', () => {
   });
 });
 
-describe('getAllDeclarationsInTree', () => {
-  it('Definitions and types', async () => {
+suite('getAllDeclarationsInTree', () => {
+  test('Definitions and types', async () => {
     const parser = await initializeMetaModelicaParser();
     const tree = parser.parse(metaModelicaTestString);
     const queries = new MetaModelicaQueries(parser.getLanguage());

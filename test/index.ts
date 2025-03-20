@@ -36,6 +36,7 @@
 import * as path from 'path';
 import Mocha from 'mocha';
 import {glob} from 'glob';
+import * as fs from 'fs';
 
 export function run(): Promise<void> {
   // Create the mocha test
@@ -48,7 +49,19 @@ export function run(): Promise<void> {
   const testsRoot = __dirname;
 
   return new Promise((resolve, reject) => {
-    glob('**.test.js', { cwd: testsRoot }).then(files => {
+    // this code is running from dist/test folder so set the paths accordingly
+    // copy tree-sitter-metamodelica.wasm
+    let sourcePath = path.resolve(__dirname, '../../src/server/tree-sitter-metamodelica.wasm');
+    let destinationPath = path.resolve(__dirname, '../src/server/tree-sitter-metamodelica.wasm');
+    fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+    fs.copyFileSync(sourcePath, destinationPath);
+    // copy tree-sitter-gdbmi.wasm
+    sourcePath = path.resolve(__dirname, '../../src/debugger/parser/tree-sitter-gdbmi.wasm');
+    destinationPath = path.resolve(__dirname, '../src/debugger/parser/tree-sitter-gdbmi.wasm');
+    fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+    fs.copyFileSync(sourcePath, destinationPath);
+    // add all test files to the mocha test suite
+    glob('**/**.test.js', { cwd: testsRoot }).then(files => {
       // Add files to the test suite
       files.forEach(f => mocha.addFile(path.resolve(testsRoot, f)));
 

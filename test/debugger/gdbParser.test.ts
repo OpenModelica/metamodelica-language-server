@@ -34,16 +34,16 @@
  */
 
 import * as assert from 'assert';
-import { GDBMIParser } from '../../../src/debugger/parser/gdbParser';
-import { setLogLevel } from '../../../src/util/logger';
+import { GDBMIParser } from '../../src/debugger/parser/gdbParser';
+import { setLogLevel } from '../../src/util/logger';
 
-describe('GDB/MI Parser', () => {
-  it('Initialize parser', async () => {
+suite('GDB/MI Parser', () => {
+  test('Initialize parser', async () => {
     const gdbMiParser = new GDBMIParser();
     await gdbMiParser.initialize();
   });
 
-  it('Parse -break-insert output', async () => {
+  test('Parse -break-insert output', async () => {
     setLogLevel("warning");
     const gdbMiParser = new GDBMIParser();
     await gdbMiParser.initialize();
@@ -80,7 +80,7 @@ describe('GDB/MI Parser', () => {
     assert.deepEqual(gdbmiOutput, breakpointOutput);
   }).timeout("2s");
 
-  it('Parse -exec-run output', async () => {
+  test('Parse -exec-run output', async () => {
     const gdbMiParser = new GDBMIParser();
     await gdbMiParser.initialize();
     const gdbmiOutput = gdbMiParser.parse('10^running\n');
@@ -88,7 +88,7 @@ describe('GDB/MI Parser', () => {
     assert.equal(gdbmiOutput.miResultRecord?.cls, "running", `Expected result class "running" got ${gdbmiOutput.miResultRecord?.cls}`);
   }).timeout("2s");
 
-  it('Parse stop event output', async () => {
+  test('Parse stop event output', async () => {
     const gdbMiParser = new GDBMIParser();
     await gdbMiParser.initialize();
     const gdbmiOutput = gdbMiParser.parse('*stopped,reason="exited-normally"\n');
