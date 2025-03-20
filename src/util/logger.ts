@@ -154,7 +154,7 @@ export function getLogLevelFromEnvironment(): LSP.MessageType {
     if (logLevel) {
       return logLevel;
     }
-    // eslint-disable-next-line no-console
+
     console.warn(
       `Invalid ${LOG_LEVEL_ENV_VAR} "${logLevelFromEnvironment}", expected one of: ${Object.keys(
         LOG_LEVELS_TO_MESSAGE_TYPES,

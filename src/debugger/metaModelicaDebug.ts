@@ -75,9 +75,6 @@ interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
   logLevel?: string;
 }
 
-interface IAttachRequestArguments extends ILaunchRequestArguments { }
-
-
 export class MetaModelicaDebugSession extends LoggingDebugSession {
 
   // we don't support multiple threads, so we can use a hardcoded ID for the default thread
@@ -190,10 +187,6 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
   protected disconnectRequest(response: DebugProtocol.DisconnectResponse, args: DebugProtocol.DisconnectArguments, request?: DebugProtocol.Request) {
     console.log(`disconnectRequest suspend: ${args.suspendDebuggee}, terminate: ${args.terminateDebuggee}`);
     this.gdbAdapter.quit();
-  }
-
-  protected async attachRequest(response: DebugProtocol.AttachResponse, args: IAttachRequestArguments) {
-    this.launchRequest(response, args);
   }
 
   protected async launchRequest(response: DebugProtocol.LaunchResponse, args: ILaunchRequestArguments) {
