@@ -288,8 +288,29 @@ export class GDBAdapter extends EventEmitter {
         this.emit("completed");
         this.emit("exit");
       } else if (reason === "breakpoint-hit") {
+        /** When we stop at a breakpoint, we need to get the thread-id.
+         * We recieve output like this,
+         *
+         * *stopped,reason="breakpoint-hit",disp="keep",bkptno="2",frame={addr="0x00007ffe5b4c521c",
+         * func="omc_CevalScript_cevalInteractiveFunctions2",args=[{name="threadData",value="0x23ffd88"},
+         * {name="_cache",value="0x8165d0c3"},{name="_env",value="0x8159e843"},{name="_functionName",
+         * value="0x80e11683"},{name="_args",value="0x8165f1c3"},{name="_msg",value="0x8165f3a3"},
+         * {name="out_outValue",value="0x23fd0d8"}],
+         * file="C:/OpenModelica/OMCompiler/Compiler/Script/CevalScript.mo",
+         * fullname="C:\\OpenModelica\\OMCompiler\\Compiler\\Script\\CevalScript.mo",
+         * line="1050",arch="i386:x86-64"},thread-id="1",stopped-threads="all"
+         *
+         */
+
+        let threadId = 0;
+        for (const result of asyncOutput.miResult) {
+          if (result.variable === "thread-id") {
+            threadId = Number(this.getGDBMIConstantValue(result));
+            break;
+          }
+        }
         this.emit("completed");
-        this.emit("stopOnBreakpoint");
+        this.emit("stopOnBreakpoint", threadId);
       }
     }
   }
