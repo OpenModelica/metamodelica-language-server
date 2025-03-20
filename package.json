@@ -128,7 +128,7 @@
     "esbuild": "node esbuild.config.js",
     "esbuild-watch": "node esbuild.config.js --watch",
     "test-compile": "tsc -b ./",
-    "lint": "eslint ./client/src ./server/src ./debugger/src --ext .ts,.tsx",
+    "lint": "eslint ./src/** ./test/** --ext .ts,.tsx",
     "tree-sitter-metamodelica": "cd src/server && node tree.sitter.metamodelica.download.js",
     "tree-sitter-gdbmi": "cd node_modules/tree-sitter-gdbmi && npx tree-sitter generate && npx tree-sitter build --wasm --docker . && cd ../../src/debugger/parser && node tree.sitter.gdbmi.js",
     "postinstall": "npm run tree-sitter-metamodelica && npm run tree-sitter-gdbmi",
