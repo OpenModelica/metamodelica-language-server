@@ -209,13 +209,26 @@ export function threadInfo(): string {
 }
 
 /**
- * Creates the -stack-list-frames --thread <thread> command.
+ * Generates a GDB command to retrieve stack depth information.
  *
- * @param thread  The thread number.
- * @returns       The command.
+ * @param depth - The depth of the stack to retrieve. If the value is greater than 0,
+ *                the command will include the specified depth. Defaults to 0.
+ * @returns A string representing the GDB command for stack depth information.
  */
-export function stackListFrames(thread: number): string {
-  const command: string = `-stack-list-frames --thread ${thread}`;
+export function stackDepth(depth: number = 0): string {
+  return depth > 0 ? `-stack-info-depth ${depth}` : "-stack-info-depth";
+}
+
+/**
+ * Generates a GDB command to list stack frames for a specific thread and frame range.
+ *
+ * @param thread - The thread ID for which to list stack frames.
+ * @param startFrame - The starting frame index in the stack.
+ * @param endFrame - The ending frame index in the stack.
+ * @returns The formatted GDB command as a string.
+ */
+export function stackListFrames(thread: number, startFrame: number, endFrame: number): string {
+  const command: string = `-stack-list-frames --thread ${thread} ${startFrame} ${endFrame}`;
   return command;
 }
 

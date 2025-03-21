@@ -44,10 +44,11 @@
 
 import {
   LoggingDebugSession,
-  InitializedEvent, TerminatedEvent, StoppedEvent, Thread
+  InitializedEvent, TerminatedEvent, StoppedEvent,
+  Thread, StackFrame, Source
   /* , BreakpointEvent, OutputEvent,
   ProgressStartEvent, ProgressUpdateEvent, ProgressEndEvent, InvalidatedEvent,
-  Thread, StackFrame, Scope, Source, Handles, Breakpoint, MemoryEvent */
+  Scope, Handles, Breakpoint, MemoryEvent */
 } from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
 import { GDBAdapter } from './gdb/gdbAdapter';
@@ -306,6 +307,15 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
   //   this.sendResponse(response);
   // }
 
+  /**
+   * Handles the `threadsRequest` from the debug client and retrieves the list of threads
+   * currently managed by the GDB debugger. This method communicates with the GDB adapter
+   * to fetch thread information and parses the response to construct a list of threads
+   * for the debug client.
+   *
+   * @param response - The `ThreadsResponse` object to be sent back to the debug client.
+   *
+   */
   protected async threadsRequest(response: DebugProtocol.ThreadsResponse): Promise<void> {
     if (this.gdbAdapter.isGDBRunning()) {
       const threads = await this.gdbAdapter.sendCommand(CommandFactory.threadInfo());
@@ -323,7 +333,7 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
        *     state="running"}],
        * current-thread-id="1"
        *
-       * Parse the result and set the breakpoint number which is needed when we have to delete the breakpoint.
+       * Parse the `threads` array to extract thread IDs and target IDs.
        */
 
       const threadsArray: Thread[] = [];
@@ -343,7 +353,7 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
           }
         });
       }
-
+      // Send the constructed thread list back to the debug client in the response body.
       response.body = {
         threads: threadsArray
       };
@@ -353,37 +363,82 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
     }
   }
 
-  protected stackTraceRequest(response: DebugProtocol.StackTraceResponse, args: DebugProtocol.StackTraceArguments): void {
+  /**
+   * Handles the `stackTraceRequest` from the debug client, which retrieves the call stack for a given thread.
+   *
+   * @param response - The response object to send back to the debug client.
+   * @param args - The arguments provided by the debug client, including the thread ID, start frame, and number of levels.
+   *
+   * The method uses GDB/MI commands like `-stack-info-depth` and `-stack-list-frames` to interact with GDB.
+   * The stack frames are parsed from the GDB/MI response and converted into the `StackFrame` format expected by the debug client.
+   * The `totalFrames` property in the response body reflects the total stack depth.
+   *
+   */
+  protected async stackTraceRequest(response: DebugProtocol.StackTraceResponse, args: DebugProtocol.StackTraceArguments): Promise<void> {
+    if (this.gdbAdapter.isGDBRunning()) {
+      // Determine the current stack depth.
+      const stackDepth = await this.gdbAdapter.sendCommand(CommandFactory.stackDepth());
+      const stackDepthResultRecord = this.gdbAdapter.getGDBMIResultRecord(stackDepth);
+      const stackDepthResult = stackDepthResultRecord?.miResultsList ? this.gdbAdapter.getGDBMIResult("depth", stackDepthResultRecord.miResultsList) : undefined;
+      const stackDepthValue = stackDepthResult ? Number(this.gdbAdapter.getGDBMIConstantValue(stackDepthResult)) : 0;
 
-    console.log("stackTraceRequest", this.gdbAdapter.isGDBRunning());
+      const startFrame = typeof args.startFrame === 'number' ? args.startFrame : 0;
+      const maxLevels = typeof args.levels === 'number' && args.levels > 0 ? args.levels : stackDepthValue;
+      const endFrame = startFrame + maxLevels;
+      // Retrieve the stack frames for the specified thread and range of frames.
+      const stack = await this.gdbAdapter.sendCommand(CommandFactory.stackListFrames(args.threadId, startFrame, endFrame));
+      /**
+       * -stack-list-frames --thread 1 returns,
+       *
+       * ^done,stack=
+       * [frame={level="0",addr="0x0001076c",func="foo",
+       *   file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="11",
+       *   arch="i386:x86_64"},
+       * frame={level="1",addr="0x000107a4",func="foo",
+       *   file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="14",
+       *   arch="i386:x86_64"},
+       * frame={level="2",addr="0x000107a4",func="foo",
+       *   file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="14",
+       *   arch="i386:x86_64"}]
+       *
+       * Parse the GDB/MI response to extract stack frame details such as function name, file, line number, and more.
+       */
 
-    // const startFrame = typeof args.startFrame === 'number' ? args.startFrame : 0;
-    // const maxLevels = typeof args.levels === 'number' ? args.levels : 1000;
-    // const endFrame = startFrame + maxLevels;
+      const stackFramesArray: StackFrame[] = [];
+      const stackResultRecord = this.gdbAdapter.getGDBMIResultRecord(stack);
+      const stackResult = stackResultRecord?.miResultsList ? this.gdbAdapter.getGDBMIResult("stack", stackResultRecord.miResultsList) : undefined;
 
-    // const stk = this._runtime.stack(startFrame, endFrame);
+      if (stackResult && stackResult.miValue.miList) {
+        stackResult.miValue.miList.miResultsList.forEach(frame => {
+          if (frame.miValue.miTuple) {
+            const levelResult = this.gdbAdapter.getGDBMIResult("level", frame.miValue.miTuple.miResultsList);
+            const level = levelResult ? this.gdbAdapter.getGDBMIConstantValue(levelResult) : "";
 
-    // response.body = {
-    //   stackFrames: stk.frames.map((f, ix) => {
-    //     const sf: DebugProtocol.StackFrame = new StackFrame(f.index, f.name, this.createSource(f.file), this.convertDebuggerLineToClient(f.line));
-    //     if (typeof f.column === 'number') {
-    //       sf.column = this.convertDebuggerColumnToClient(f.column);
-    //     }
-    //     if (typeof f.instruction === 'number') {
-    //       const address = this.formatAddress(f.instruction);
-    //       sf.name = `${f.name} ${address}`;
-    //       sf.instructionPointerReference = address;
-    //     }
+            const fileResult = this.gdbAdapter.getGDBMIResult("file", frame.miValue.miTuple.miResultsList);
+            const file = fileResult ? this.cleanupFileName(this.gdbAdapter.getGDBMIConstantValue(fileResult)) : "";
 
-    //     return sf;
-    //   }),
-    //   // 4 options for 'totalFrames':
-    //   //omit totalFrames property:   // VS Code has to probe/guess. Should result in a max. of two requests
-    //   totalFrames: stk.count      // stk.count is the correct size, should result in a max. of two requests
-    //   //totalFrames: 1000000       // not the correct size, should result in a max. of two requests
-    //   //totalFrames: endFrame + 20   // dynamically increases the size with every requested chunk, results in paging
-    // };
-    this.sendResponse(response);
+            const funcResult = this.gdbAdapter.getGDBMIResult("func", frame.miValue.miTuple.miResultsList);
+            const func = funcResult ? this.cleanupFunction(this.gdbAdapter.getGDBMIConstantValue(funcResult), file) : "";
+
+            const fullnameResult = this.gdbAdapter.getGDBMIResult("fullname", frame.miValue.miTuple.miResultsList);
+            const fullname = fullnameResult ? this.gdbAdapter.getGDBMIConstantValue(fullnameResult) : "";
+
+            const lineResult = this.gdbAdapter.getGDBMIResult("line", frame.miValue.miTuple.miResultsList);
+            const line = lineResult ? Number(this.gdbAdapter.getGDBMIConstantValue(lineResult)) : 0;
+
+            stackFramesArray.push(new StackFrame(Number(level), func, new Source(file, fullname), line));
+          }
+        });
+      }
+      // The parsed stack frames are then sent back to the debug client in the response body.
+      response.body = {
+        stackFrames: stackFramesArray,
+        totalFrames: stackDepthValue
+      };
+      this.sendResponse(response);
+    } else {
+      this.sendResponse(response);
+    }
   }
 
   protected scopesRequest(response: DebugProtocol.ScopesResponse, args: DebugProtocol.ScopesArguments): void {
@@ -893,5 +948,76 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
   // private createSource(filePath: string): Source {
   //   return new Source(basename(filePath), this.convertDebuggerPathToClient(filePath), undefined, undefined, 'mock-adapter-data');
   // }
+
+  /**
+   * Cleans up the file name by normalizing paths and handling platform-specific quirks.
+   * @param fileName - The file name to clean up.
+   * @returns A cleaned-up file path.
+   */
+  private cleanupFileName(fileName: string): string {
+    let cleanFilePath = fileName;
+
+    /** Gdb running on windows often delivers "fullnames" which
+     * (a) have no drive letter and (b) are not normalized.
+     */
+    if (process.platform === 'win32') {
+      if (!fileName) {
+        return '';
+      }
+      cleanFilePath = path.normalize(fileName);
+    }
+
+    return cleanFilePath;
+  }
+
+  /**
+   * Cleans up a function name based on the file extension and specific naming conventions.
+   *
+   * - If the file extension is `.mo`:
+   *   - Removes the `omc_` prefix from the function name if it exists.
+   *   - Converts function names starting with `_omcQuot_` from a hex-encoded string to a readable string.
+   *
+   * @param functionName - The original name of the function to be cleaned.
+   * @param fileName - The name of the file associated with the function, used to determine the file extension.
+   * @returns The cleaned-up function name.
+   */
+  private cleanupFunction(functionName: string, fileName: string): string {
+    let cleanFunction = functionName;
+    const fileExtension = path.extname(fileName).toLowerCase();
+
+    if (fileExtension === '.mo') {
+      // If the function name starts with 'omc_', remove the first 4 characters
+      if (functionName.startsWith('omc_')) {
+        cleanFunction = functionName.substring(4);
+      } else if (functionName.startsWith('_omcQuot_')) { // If the names are converted to hex values
+        const hexString = this.omcHexToString(functionName);
+        if (hexString) {
+          cleanFunction = hexString;
+        }
+      }
+    }
+
+    return cleanFunction;
+  }
+
+  /** todo. Fix this code */
+  private omcHexToString(str: string): string | null {
+    const lookupTbl = '0123456789ABCDEF';
+    const omcQuotPrefix = '_omcQuot_';
+
+    if (!str.startsWith("'") || !str.endsWith("'")) {
+      return null;
+    }
+
+    const hexContent = str.slice(1, -1); // Remove the surrounding single quotes
+    let result = omcQuotPrefix;
+
+    for (const char of hexContent) {
+      const charCode = char.charCodeAt(0);
+      result += lookupTbl[Math.floor(charCode / 16)] + lookupTbl[charCode % 16];
+    }
+
+    return result;
+  }
 }
 
