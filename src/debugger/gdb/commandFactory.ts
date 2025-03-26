@@ -237,11 +237,10 @@ export function stackListFrames(thread: number, startFrame: number, endFrame: nu
  *
  * @param thread      The thread number.
  * @param frame       The frame number.
- * @param printValues Defines the format how the values are printed.
  * @returns           The command.
  */
-export function stackListVariables(thread: number, frame: number, printValues: string): string {
-  const command: string = `-stack-list-variables --thread ${thread} --frame ${frame} ${printValues}`;
+export function stackListVariables(thread: number, frame: number): string {
+  const command: string = `-stack-list-variables --thread ${thread} --frame ${frame} --simple-values`;
   return command;
 }
 

@@ -44,8 +44,9 @@
 
 import {
   LoggingDebugSession,
-  InitializedEvent, TerminatedEvent, StoppedEvent,
-  Thread, StackFrame, Source
+  InitializedEvent, TerminatedEvent,
+  Thread, StackFrame, Source,
+  Scope
   /* , BreakpointEvent, OutputEvent,
   ProgressStartEvent, ProgressUpdateEvent, ProgressEndEvent, InvalidatedEvent,
   Scope, Handles, Breakpoint, MemoryEvent */
@@ -80,6 +81,7 @@ interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
 export class MetaModelicaDebugSession extends LoggingDebugSession {
   private gdbAdapter: GDBAdapter;
   private breakpointHandler: BreakpointHandler;
+  private selectedThread: number = 1;
 
   public constructor() {
     super();
@@ -95,7 +97,17 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
     //   this.sendEvent(new StoppedEvent('step', MetaModelicaDebugSession.threadID));
     // });
     this.gdbAdapter.on('stopOnBreakpoint', (threadID: number) => {
-      this.sendEvent(new StoppedEvent('breakpoint', threadID));
+      const stoppedEvent: DebugProtocol.StoppedEvent = {
+        type: 'stopped',
+        event: 'stopped',
+        seq: 0,
+        body: {
+          reason: 'breakpoint',
+          threadId: threadID,
+          allThreadsStopped: true
+        }
+      };
+      this.sendEvent(stoppedEvent);
     });
     // this._runtime.on('stopOnDataBreakpoint', () => {
     //   this.sendEvent(new StoppedEvent('data breakpoint', MetaModelicaDebugSession.threadID));
@@ -230,9 +242,9 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
         if (gdbmiBreakpointResult && gdbmiBreakpointResult.miValue.miTuple) {
           const gdbmiResult = this.gdbAdapter.getGDBMIResult("number", gdbmiBreakpointResult.miValue.miTuple.miResultsList);
           const breakpointNumber = gdbmiResult ? this.gdbAdapter.getGDBMIConstantValue(gdbmiResult) : "";
-            if (breakpointNumber) {
-              this.breakpointHandler.addBreakpoint(Number(breakpointNumber), args.source, bp.line);
-            }
+          if (breakpointNumber) {
+            this.breakpointHandler.addBreakpoint(Number(breakpointNumber), args.source, bp.line);
+          }
         }
       }
     }
@@ -335,7 +347,6 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
        *
        * Parse the `threads` array to extract thread IDs and target IDs.
        */
-
       const threadsArray: Thread[] = [];
       const threadsResultRecord = this.gdbAdapter.getGDBMIResultRecord(threads);
       const threadsResult = threadsResultRecord?.miResultsList ? this.gdbAdapter.getGDBMIResult("threads", threadsResultRecord.miResultsList) : undefined;
@@ -345,11 +356,7 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
           if (thread.miTuple) {
             const threadIdResult = this.gdbAdapter.getGDBMIResult("id", thread.miTuple.miResultsList);
             const threadId = threadIdResult ? this.gdbAdapter.getGDBMIConstantValue(threadIdResult) : "";
-
-            const targetIdResult = this.gdbAdapter.getGDBMIResult("target-id", thread.miTuple.miResultsList);
-            const targetId = targetIdResult ? this.gdbAdapter.getGDBMIConstantValue(targetIdResult) : "";
-
-            threadsArray.push(new Thread(Number(threadId), targetId));
+            threadsArray.push(new Thread(Number(threadId), `[${threadId}]`));
           }
         });
       }
@@ -385,6 +392,7 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
       const startFrame = typeof args.startFrame === 'number' ? args.startFrame : 0;
       const maxLevels = typeof args.levels === 'number' && args.levels > 0 ? args.levels : stackDepthValue;
       const endFrame = startFrame + maxLevels;
+      this.selectedThread = args.threadId;
       // Retrieve the stack frames for the specified thread and range of frames.
       const stack = await this.gdbAdapter.sendCommand(CommandFactory.stackListFrames(args.threadId, startFrame, endFrame));
       /**
@@ -403,7 +411,6 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
        *
        * Parse the GDB/MI response to extract stack frame details such as function name, file, line number, and more.
        */
-
       const stackFramesArray: StackFrame[] = [];
       const stackResultRecord = this.gdbAdapter.getGDBMIResultRecord(stack);
       const stackResult = stackResultRecord?.miResultsList ? this.gdbAdapter.getGDBMIResult("stack", stackResultRecord.miResultsList) : undefined;
@@ -442,16 +449,19 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
   }
 
   protected scopesRequest(response: DebugProtocol.ScopesResponse, args: DebugProtocol.ScopesArguments): void {
+    if (this.gdbAdapter.isGDBRunning()) {
+      console.log(this.selectedThread);
+      console.log(args.frameId);
 
-    console.log("scopesRequest", this.gdbAdapter.isGDBRunning());
-
-    // response.body = {
-    //   scopes: [
-    //     new Scope("Locals", this._variableHandles.create('locals'), false),
-    //     new Scope("Globals", this._variableHandles.create('globals'), true)
-    //   ]
-    // };
-    this.sendResponse(response);
+      response.body = {
+        scopes: [
+          new Scope("All", args.frameId + 1, true)
+        ]
+      };
+      this.sendResponse(response);
+    } else {
+      this.sendResponse(response);
+    }
   }
 
   // protected async writeMemoryRequest(response: DebugProtocol.WriteMemoryResponse, { data, memoryReference, offset = 0 }: DebugProtocol.WriteMemoryArguments) {
@@ -492,30 +502,73 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
   //   this.sendResponse(response);
   // }
 
-  // protected async variablesRequest(response: DebugProtocol.VariablesResponse, args: DebugProtocol.VariablesArguments, request?: DebugProtocol.Request): Promise<void> {
+  protected async variablesRequest(response: DebugProtocol.VariablesResponse, args: DebugProtocol.VariablesArguments, request?: DebugProtocol.Request): Promise<void> {
+    if (this.gdbAdapter.isGDBRunning()) {
+      console.log("variablesRequest");
+      // Get the list of variables in the current thread and stack frame.
+      const variables = await this.gdbAdapter.sendCommand(CommandFactory.stackListVariables(this.selectedThread, args.variablesReference - 1));
+      /**
+       * -stack-list-variables --thread 1 --frame 0 --simple-values returns,
+       *
+       * ^done,variables=[
+       *   {name="_from",type="modelica_string",value="0x0"},
+       *   {name="_strs",type="modelica_metatype",value="0x0"},
+       *   {name="_interfaceType",type="modelica_metatype",value="0x0"},
+       *   {name="_filename",type="modelica_string",value="0x0"},
+       *   {name="_res",type="modelica_string",value="0x0"},
+       *   {name="_r1",type="modelica_real",value="1.8650041382042542e-316"},
+       *   {name="_within_",type="modelica_metatype",value="0x0"},
+       *   {name="_classpath",type="modelica_metatype",value="0x0"},
+       *   {name="_i",type="modelica_integer",value="0"},
+       *   {name="_r2",type="modelica_real",value="1.8644077021565947e-316"},
+       *   {name="_messages",type="modelica_metatype",value="0x0"},
+       *   {name="_cmd",type="modelica_string",value="0x0"},
+       *   {name="_ty",type="modelica_metatype",value="0x0"},
+       *   {name="_v",type="modelica_metatype",value="0x0"},
+       *   {name="_includePartial",type="modelica_boolean",value="-88 '\250'"},
+       *   {name="_requireExactVersion",type="modelica_boolean",value="11 '\\v'"},
+       * ]
+       *
+       * Parse the GDB/MI response to extract variables details such as name, type and value.
+       */
+      const variablesArray: DebugProtocol.Variable[] = [];
+      const variablesResultRecord = this.gdbAdapter.getGDBMIResultRecord(variables);
+      const variablesResult = variablesResultRecord?.miResultsList ? this.gdbAdapter.getGDBMIResult("variables", variablesResultRecord.miResultsList) : undefined;
 
-  //   let vs: RuntimeVariable[] = [];
+      if (variablesResult && variablesResult.miValue.miList) {
+        variablesResult.miValue.miList.miValuesList.forEach(variable => {
+          if (variable.miTuple) {
+            const nameResult = this.gdbAdapter.getGDBMIResult("name", variable.miTuple.miResultsList);
+            let name = nameResult ? this.gdbAdapter.getGDBMIConstantValue(nameResult) : "";
+            /* We are only interested in the variables starting with underscore. */
+            if (name && name.startsWith("_")) {
+              name = name.replace(/^_/, '');
+              const typeResult = this.gdbAdapter.getGDBMIResult("type", variable.miTuple.miResultsList);
+              const type = typeResult ? this.gdbAdapter.getGDBMIConstantValue(typeResult) : "";
 
-  //   const v = this._variableHandles.get(args.variablesReference);
-  //   if (v === 'locals') {
-  //     vs = this._runtime.getLocalVariables();
-  //   } else if (v === 'globals') {
-  //     if (request) {
-  //       this._cancellationTokens.set(request.seq, false);
-  //       vs = await this._runtime.getGlobalVariables(() => !!this._cancellationTokens.get(request.seq));
-  //       this._cancellationTokens.delete(request.seq);
-  //     } else {
-  //       vs = await this._runtime.getGlobalVariables();
-  //     }
-  //   } else if (v && Array.isArray(v.value)) {
-  //     vs = v.value;
-  //   }
+              const valueResult = this.gdbAdapter.getGDBMIResult("value", variable.miTuple.miResultsList);
+              const value = valueResult ? this.gdbAdapter.getGDBMIConstantValue(valueResult) : "";
 
-  //   response.body = {
-  //     variables: vs.map(v => this.convertFromRuntime(v))
-  //   };
-  //   this.sendResponse(response);
-  // }
+              const variableInstance: DebugProtocol.Variable = {
+                name: name,
+                value: value,
+                type: type,
+                variablesReference: type === "modelica_metatype" ? 1 : 0
+              };
+              variablesArray.push(variableInstance);
+            }
+          }
+        });
+      }
+      // The parsed variables are then sent back to the debug client in the response body.
+      response.body = {
+        variables: variablesArray
+      };
+      this.sendResponse(response);
+    } else {
+      this.sendResponse(response);
+    }
+  }
 
   // protected setVariableRequest(response: DebugProtocol.SetVariableResponse, args: DebugProtocol.SetVariableArguments): void {
   //   const container = this._variableHandles.get(args.variablesReference);
@@ -538,7 +591,7 @@ export class MetaModelicaDebugSession extends LoggingDebugSession {
   // }
 
   protected continueRequest(response: DebugProtocol.ContinueResponse, args: DebugProtocol.ContinueArguments): void {
-    // this._runtime.continue(false);
+    this.gdbAdapter.sendCommand(CommandFactory.execContinue());
     this.sendResponse(response);
   }
 
