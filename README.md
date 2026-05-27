@@ -22,6 +22,50 @@ features:
 
   ![Diagnostics](images/problemMatching.png)
 
+## CLI (`mmlsc`)
+
+The package ships a command-line tool, `mmlsc`, for batch-processing MetaModelica
+source files without opening VS Code.
+
+### Usage
+
+```text
+mmlsc [--fix] <paths...>
+```
+
+| Argument / option | Description |
+| ----------------- | ----------- |
+| `<paths...>` | Files or directories to process. Directories are scanned **recursively** for `.mo` files. |
+| `--fix` | Apply quick-fixes **in-place** and save the modified files. Without this flag the tool only reports issues and exits with `1`. |
+| `--help` | Print usage information. |
+
+### Example
+
+Report all unused `match`/`matchcontinue` arguments in a source tree:
+
+```bash
+node out/cli.js src/
+```
+
+Apply the quick-fix for all detected issues:
+
+```bash
+node out/cli.js --fix src/
+```
+
+When installed globally (`npm install -g .` from the repository root after
+building), the tool is available as:
+
+```bash
+mmlsc --fix src/
+```
+
+### Supported quick-fixes
+
+| Diagnostic | Fix |
+|---|---|
+| Unused `match`/`matchcontinue` argument (pattern is `_` in every case) | Remove the argument from the input tuple and all case patterns |
+
 ## Installation
 
 ### Via Marketplace

@@ -65,6 +65,7 @@ async function main() {
     platform: 'node',
     outfile: './out/cli.js',
     external: ['vscode'],
+    banner: { js: '#!/usr/bin/env node' },
     logLevel: 'warning',
     plugins: [
       /* add to the end of plugins array */
@@ -77,6 +78,7 @@ async function main() {
     await cli.rebuild();
     await cli.dispose();
   }
+  fs.chmodSync('./out/cli.js', 0o755);
 }
 
 /**
