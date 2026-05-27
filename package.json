@@ -2,7 +2,7 @@
   "name": "metamodelica-language-server",
   "displayName": "MetaModelica Language Server",
   "description": "[Experimental] MetaModelica language server",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "Andreas Heuermann",
   "license": "See OSMC-License.txt",
   "repository": {
@@ -138,6 +138,10 @@
     "test": "npm run test-compile && node ./dist/test/runTest",
     "all": "npm run postinstall && npm run esbuild && npm run lint && npm run test && npm run vscode:prepublish"
   },
+  "overrides": {
+    "diff": "^9.0.0",
+    "serialize-javascript": "^7.0.5"
+  },
   "dependencies": {
     "vscode-languageclient": "^9.0.1",
     "tree-sitter": "^0.21.1",
@@ -148,16 +152,16 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.13.10",
-    "@typescript-eslint/eslint-plugin": "^8.26.1",
-    "@typescript-eslint/parser": "^8.26.1",
-    "esbuild": "^0.25.1",
+    "@typescript-eslint/eslint-plugin": "^8.60.0",
+    "@typescript-eslint/parser": "^8.60.0",
+    "esbuild": "^0.28.0",
     "eslint": "^9.22.0",
-    "mocha": "^11.1.0",
+    "mocha": "^11.7.6",
     "ts-node": "^10.9.2",
-    "@types/vscode": "^1.98.0",
-    "@vscode/test-electron": "^2.4.1",
-    "glob": "^11.0.1",
-    "axios": "^1.15.2",
+    "@types/vscode": "^1.120.0",
+    "@vscode/test-electron": "^2.5.2",
+    "glob": "^13.0.6",
+    "axios": "^1.16.1",
     "@vscode/debugadapter": "^1.68.0",
     "tree-sitter-cli": "^0.23.2",
     "tree-sitter-gdbmi": "github:novafacing/tree-sitter-gdbmi"
