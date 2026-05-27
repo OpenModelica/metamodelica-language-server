@@ -67,6 +67,29 @@ algorithm
 end foo;
 `;
 
+const unusedProtectedVarSource = `function addOne
+  input Integer x;
+  output Integer y;
+protected
+  Integer unused;
+  Integer tmp;
+algorithm
+  tmp := x + 1;
+  y := tmp;
+end addOne;
+`;
+
+const unusedProtectedVarFixed = `function addOne
+  input Integer x;
+  output Integer y;
+protected
+  Integer tmp;
+algorithm
+  tmp := x + 1;
+  y := tmp;
+end addOne;
+`;
+
 const noIssueSource = `function bar
   input Integer a;
   output Boolean res;
@@ -138,6 +161,29 @@ suite('CLI processFiles', () => {
 
     assert.strictEqual(result.filesProcessed, 2);
     assert.strictEqual(result.issuesFound, 2);
+  });
+
+  test('detects unused protected variable (report mode)', async () => {
+    const filePath = path.join(tmpDir, 'unused_var.mo');
+    fs.writeFileSync(filePath, unusedProtectedVarSource);
+
+    const result = await processFiles([filePath], false);
+
+    assert.strictEqual(result.filesProcessed, 1);
+    assert.strictEqual(result.issuesFound, 1);
+    assert.strictEqual(result.issuesFixed, 0);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), unusedProtectedVarSource);
+  });
+
+  test('fixes unused protected variable in-place (fix mode)', async () => {
+    const filePath = path.join(tmpDir, 'unused_var.mo');
+    fs.writeFileSync(filePath, unusedProtectedVarSource);
+
+    const result = await processFiles([filePath], true);
+
+    assert.strictEqual(result.filesProcessed, 1);
+    assert.strictEqual(result.issuesFixed, 1);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), unusedProtectedVarFixed);
   });
 
   test('fixes multiple files in a directory (fix mode)', async () => {

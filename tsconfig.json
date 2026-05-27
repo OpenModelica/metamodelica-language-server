@@ -11,6 +11,7 @@
     "sourceMap": true,
     "skipLibCheck": true,
     "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
     "declaration": true,
     "strict": true, /* enable all strict type-checking options */
     /* Additional Checks */

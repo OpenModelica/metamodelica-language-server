@@ -45,6 +45,11 @@ export interface UnusedArgFix {
   edits: LSP.TextEdit[];
 }
 
+export interface UnusedVarFix {
+  varName: string;
+  edits: LSP.TextEdit[];
+}
+
 /**
  * Extract tuple element expressions from a `(a, b, c)` expression node.
  * Returns null if the expression is not a parenthesized tuple with at least two elements.
@@ -90,6 +95,171 @@ function buildTupleNewText(elements: Parser.SyntaxNode[], skipIndex: number): st
   const remaining = elements.filter((_, i) => i !== skipIndex).map(e => e.text);
   if (remaining.length === 1) { return remaining[0]; }
   return '(' + remaining.join(', ') + ')';
+}
+
+/**
+ * Get the IDENT node from a component_declaration node.
+ * In the grammar: component_declaration → declaration → IDENT (field: identifier)
+ */
+function getDeclIdent(decl: Parser.SyntaxNode): Parser.SyntaxNode | null {
+  const declNode = decl.namedChildren.find(c => c.type === 'declaration');
+  if (!declNode) { return null; }
+  return declNode.namedChildren.find(c => c.type === 'IDENT') || null;
+}
+
+/**
+ * Return true if `name` appears as any IDENT node inside `scope`,
+ * excluding the subtree rooted at `skipNode` (the declaration element).
+ */
+function isNameUsed(name: string, scope: Parser.SyntaxNode, skipNode: Parser.SyntaxNode): boolean {
+  let found = false;
+  const skipStart = skipNode.startIndex;
+  const skipEnd = skipNode.endIndex;
+
+  function visit(node: Parser.SyntaxNode): void {
+    if (found) { return; }
+    if (node.startIndex === skipStart && node.endIndex === skipEnd) { return; }
+    if (node.type === 'IDENT' && node.text === name) {
+      found = true;
+      return;
+    }
+    for (const child of node.children) {
+      if (found) { return; }
+      visit(child);
+    }
+  }
+
+  visit(scope);
+  return found;
+}
+
+/**
+ * Build LSP TextEdits to remove a single component_declaration from its
+ * parent element.  When it is the only declaration the entire element line
+ * is removed; otherwise the declaration is excised from the comma-separated
+ * list.
+ */
+function buildVarRemoveEdits(
+  elementNode: Parser.SyntaxNode,
+  componentClause: Parser.SyntaxNode,
+  targetDecl: Parser.SyntaxNode,
+): LSP.TextEdit[] {
+  const declarations = componentClause.namedChildren.filter(c => c.type === 'component_declaration');
+
+  if (declarations.length === 1) {
+    return [{
+      range: LSP.Range.create(
+        elementNode.startPosition.row, 0,
+        elementNode.endPosition.row + 1, 0,
+      ),
+      newText: '',
+    }];
+  }
+
+  const idx = declarations.indexOf(targetDecl);
+  const allChildren = componentClause.children;
+  const nodeIdx = allChildren.findIndex(c => c.startIndex === targetDecl.startIndex);
+
+  if (nodeIdx === -1) {
+    return [{ range: TreeSitterUtil.range(targetDecl), newText: '' }];
+  }
+
+  if (idx < declarations.length - 1) {
+    // Not the last: remove "name, " by spanning to the start of the next declaration
+    const nextDecl = declarations[idx + 1];
+    return [{
+      range: LSP.Range.create(
+        targetDecl.startPosition.row, targetDecl.startPosition.column,
+        nextDecl.startPosition.row, nextDecl.startPosition.column,
+      ),
+      newText: '',
+    }];
+  } else {
+    // Last: remove ", name" by spanning back to the preceding COMMA
+    let commaNode: Parser.SyntaxNode | null = null;
+    for (let i = nodeIdx - 1; i >= 0; i--) {
+      if (allChildren[i].type === 'COMMA') {
+        commaNode = allChildren[i];
+        break;
+      }
+    }
+    if (!commaNode) {
+      return [{ range: TreeSitterUtil.range(targetDecl), newText: '' }];
+    }
+    return [{
+      range: LSP.Range.create(
+        commaNode.startPosition.row, commaNode.startPosition.column,
+        targetDecl.endPosition.row, targetDecl.endPosition.column,
+      ),
+      newText: '',
+    }];
+  }
+}
+
+/**
+ * Check all component_declarations within an element node for unused variables.
+ */
+function checkElementDeclarations(
+  elementNode: Parser.SyntaxNode,
+  scope: Parser.SyntaxNode,
+  results: { varNode: Parser.SyntaxNode; fix: UnusedVarFix }[],
+): void {
+  const componentClause = elementNode.namedChildren.find(c => c.type === 'component_clause');
+  if (!componentClause) { return; }
+
+  const declarations = componentClause.namedChildren.filter(c => c.type === 'component_declaration');
+  for (const decl of declarations) {
+    const identNode = getDeclIdent(decl);
+    if (!identNode) { continue; }
+    const name = identNode.text;
+    if (!isNameUsed(name, scope, elementNode)) {
+      results.push({
+        varNode: identNode,
+        fix: {
+          varName: name,
+          edits: buildVarRemoveEdits(elementNode, componentClause, decl),
+        },
+      });
+    }
+  }
+}
+
+/**
+ * Find unused protected variables in function bodies and unused local
+ * variables inside match/matchcontinue expressions.
+ */
+function getUnusedVariables(rootNode: Parser.SyntaxNode): { varNode: Parser.SyntaxNode; fix: UnusedVarFix }[] {
+  const results: { varNode: Parser.SyntaxNode; fix: UnusedVarFix }[] = [];
+
+  TreeSitterUtil.forEach(rootNode, (node) => {
+    // Protected variables declared inside a composition (function body)
+    if (node.type === 'composition') {
+      let inProtected = false;
+      for (const child of node.children) {
+        if (child.type === 'PROTECTED') { inProtected = true; continue; }
+        if (child.type === 'PUBLIC') { inProtected = false; continue; }
+        if (inProtected && child.type === 'element') {
+          checkElementDeclarations(child, node, results);
+        }
+      }
+    }
+
+    // Local variables declared in a match/matchcontinue local clause
+    if (node.type === 'match_expression') {
+      const localClause = node.namedChildren.find(c => c.type === 'local_clause');
+      if (localClause) {
+        for (const child of localClause.namedChildren) {
+          if (child.type === 'element') {
+            checkElementDeclarations(child, node, results);
+          }
+        }
+      }
+    }
+
+    return true;
+  });
+
+  return results;
 }
 
 /**
@@ -226,6 +396,17 @@ export function getDiagnosticsFromTree(tree: Parser.Tree, queries: MetaModelicaQ
         LSP.DiagnosticSeverity.Information,
         "'matchcontinue' is inefficient, use 'match' and 'try-catch' instead."));
     }
+  }
+
+  // Inform about unused protected / local variables
+  const unusedVars = getUnusedVariables(tree.rootNode);
+  for (const { varNode, fix } of unusedVars) {
+    const diagnostic = nodeToDiagnostic(
+      varNode,
+      LSP.DiagnosticSeverity.Information,
+      `Unused variable '${varNode.text}'.`);
+    (diagnostic as LSP.Diagnostic & { data: unknown }).data = { unusedVarFix: fix };
+    diagnostics.push(diagnostic);
   }
 
   // Inform about unused match/matchcontinue arguments

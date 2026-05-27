@@ -40,7 +40,7 @@ import * as LSP from 'vscode-languageserver/node';
 
 import { initializeMetaModelicaParser } from '../server/metaModelicaParser';
 import Analyzer from '../server/analyzer';
-import { UnusedArgFix } from '../server/diagnostics';
+import { UnusedArgFix, UnusedVarFix } from '../server/diagnostics';
 
 export interface ProcessResult {
   filesProcessed: number;
@@ -117,9 +117,10 @@ export async function processFiles(paths: string[], fix: boolean): Promise<Proce
         const doc = TextDocument.create(uri, 'metamodelica', 1, content);
         const diagnostics = analyzer.analyze(doc);
         for (const diagnostic of diagnostics) {
-          const data = diagnostic.data as { unusedArgFix?: UnusedArgFix } | undefined;
-          if (data?.unusedArgFix) {
-            content = applyEdits(content, uri, data.unusedArgFix.edits);
+          const data = diagnostic.data as { unusedArgFix?: UnusedArgFix; unusedVarFix?: UnusedVarFix } | undefined;
+          const edits = data?.unusedArgFix?.edits ?? data?.unusedVarFix?.edits;
+          if (edits) {
+            content = applyEdits(content, uri, edits);
             fixed++;
             hasMore = true;
             break; // restart scan; positions are now stale
@@ -136,8 +137,8 @@ export async function processFiles(paths: string[], fix: boolean): Promise<Proce
       const diagnostics = analyzer.analyze(doc);
       let count = 0;
       for (const diagnostic of diagnostics) {
-        const data = diagnostic.data as { unusedArgFix?: UnusedArgFix } | undefined;
-        if (data?.unusedArgFix) {
+        const data = diagnostic.data as { unusedArgFix?: UnusedArgFix; unusedVarFix?: UnusedVarFix } | undefined;
+        if (data?.unusedArgFix || data?.unusedVarFix) {
           const { line, character } = diagnostic.range.start;
           console.log(`${filePath}:${line + 1}:${character + 1}: ${diagnostic.message}`);
           count++;
