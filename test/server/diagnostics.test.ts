@@ -386,4 +386,70 @@ end foo;
     const unused = diagnostics.filter(d => d.message.startsWith('Unused match argument'));
     assert.strictEqual(unused.length, 0, 'Function-call argument must not be flagged');
   });
+
+  // ── Silenced outputs (`_ := expr`) ────────────────────────────────────────
+
+  const silencedOutputString = `
+function binTreeintersection1
+  input Integer key;
+  input BinTree bt2;
+  input BinTree iBt;
+  output BinTree oBt;
+algorithm
+  oBt := matchcontinue(key,bt2,iBt)
+    local
+      BinTree bt;
+    case(_,_,_)
+      algorithm
+        _ := treeGet(bt2,key);
+        bt := treeAdd(iBt,key,0);
+      then
+        bt;
+    else iBt;
+  end matchcontinue;
+end binTreeintersection1;
+`;
+
+  const noSilencedOutputString = `
+function addOne
+  input Integer x;
+  output Integer y;
+algorithm
+  y := x + 1;
+end addOne;
+`;
+
+  test('Detects silenced output (_ := expr)', async () => {
+    const parser = await initializeMetaModelicaParser();
+    const tree = parser.parse(silencedOutputString);
+    const queries = new MetaModelicaQueries(parser.getLanguage());
+    const diagnostics = getDiagnosticsFromTree(tree, queries);
+
+    const silenced = diagnostics.filter(d => d.message.startsWith('Unnecessary output silencing'));
+    assert.strictEqual(silenced.length, 1, 'Exactly one silenced output expected');
+
+    const d = silenced[0] as LSP.Diagnostic & { data: { silencedOutputFix: { edits: LSP.TextEdit[] } } };
+    assert.strictEqual(d.severity, LSP.DiagnosticSeverity.Information);
+    assert.strictEqual(d.source, 'MetaModelica-language-server');
+    // Diagnostic points at the `_` token
+    assert.deepEqual(d.range.start, { line: 12, character: 8 });
+    assert.deepEqual(d.range.end, { line: 12, character: 9 });
+
+    // Fix removes `_ := ` (from start of statement to start of rhs expression)
+    assert.strictEqual(d.data.silencedOutputFix.edits.length, 1);
+    assert.strictEqual(d.data.silencedOutputFix.edits[0].newText, '');
+    // The edit range covers `_ := `
+    assert.deepEqual(d.data.silencedOutputFix.edits[0].range.start, { line: 12, character: 8 });
+    assert.deepEqual(d.data.silencedOutputFix.edits[0].range.end, { line: 12, character: 13 });
+  });
+
+  test('Does not flag regular assignments', async () => {
+    const parser = await initializeMetaModelicaParser();
+    const tree = parser.parse(noSilencedOutputString);
+    const queries = new MetaModelicaQueries(parser.getLanguage());
+    const diagnostics = getDiagnosticsFromTree(tree, queries);
+
+    const silenced = diagnostics.filter(d => d.message.startsWith('Unnecessary output silencing'));
+    assert.strictEqual(silenced.length, 0);
+  });
 });

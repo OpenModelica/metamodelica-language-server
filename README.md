@@ -69,6 +69,7 @@ building), the tool is available as `mmlsc`.
 | --- | --- | --- |
 | `unused-var` | Unused variable in a `protected` section or `local` block | Remove the variable declaration |
 | `unused-match-arg` | Unused `match`/`matchcontinue` argument (pattern is `_` in every case) | Remove the argument from the input tuple and all case patterns |
+| `unused-silenced-output` | Unnecessary output silencing (`_ := expr`) — the `_ :=` prefix can be omitted | Remove the `_ :=` prefix, keeping only the expression |
 
 ## Installation
 
