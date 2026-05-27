@@ -123,6 +123,9 @@
       }
     ]
   },
+  "bin": {
+    "mmlsc": "./out/cli.js"
+  },
   "scripts": {
     "vscode:prepublish": "node esbuild.config.js --minify",
     "esbuild": "node esbuild.config.js",

@@ -53,6 +53,30 @@ async function main() {
     await server.rebuild();
     await server.dispose();
   }
+
+  // Build CLI
+  const cli = await esbuild.context({
+    entryPoints: ['./src/cli/cli.ts'],
+    bundle: true,
+    format: 'cjs',
+    minify: production,
+    sourcemap: !production,
+    sourcesContent: false,
+    platform: 'node',
+    outfile: './out/cli.js',
+    external: ['vscode'],
+    logLevel: 'warning',
+    plugins: [
+      /* add to the end of plugins array */
+      esbuildCliProblemMatcherPlugin
+    ]
+  });
+  if (watch) {
+    await cli.watch();
+  } else {
+    await cli.rebuild();
+    await cli.dispose();
+  }
 }
 
 /**
@@ -89,6 +113,23 @@ const esbuildServerProblemMatcherPlugin = {
         console.error(`    ${location.file}:${location.line}:${location.column}:`);
       });
       console.log(`Server${watchStr}build finished`);
+    });
+  }
+};
+const esbuildCliProblemMatcherPlugin = {
+  name: 'esbuild-cli-problem-matcher',
+
+  setup(build) {
+    build.onStart(() => {
+      console.log(`CLI${watchStr}build started`);
+    });
+    build.onEnd(result => {
+      result.errors.forEach(({ text, location }) => {
+        console.error(`✘ CLI${watchStr}build [ERROR] ${text}`);
+        if (location === null) {return;}
+        console.error(`    ${location.file}:${location.line}:${location.column}:`);
+      });
+      console.log(`CLI${watchStr}build finished`);
     });
   }
 };
