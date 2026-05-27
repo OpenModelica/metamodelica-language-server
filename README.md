@@ -14,20 +14,20 @@ in addition.
 This Language Server works for MetaModelica files. It has the following language
 features:
 
-  - Provide Outline of MetaModelica files.
+- Provide Outline of MetaModelica files.
 
-    ![Outline](images/outline_demo.png)
+  ![Outline](images/outline_demo.png)
 
-  - Diagnostics:
+- Diagnostics:
 
-    ![Diagnostics](images/problemMatching.png)
+  ![Diagnostics](images/problemMatching.png)
 
 ## Installation
 
 ### Via Marketplace
 
-  - [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=OpenModelica.metamodelica-language-server)
-  - [Open VSX Registry](https://open-vsx.org/extension/OpenModelica/metamodelica-language-server)
+- [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=OpenModelica.metamodelica-language-server)
+- [Open VSX Registry](https://open-vsx.org/extension/OpenModelica/metamodelica-language-server)
 
 ### Via VSIX File
 
@@ -67,28 +67,28 @@ Found a bug or having issues? Open a
 
 ### Dependencies
 
-  - Docker installed and running.
+- Docker installed and running.
 
 ### Quick install
 
-  - Run `npm install` and `npm run postinstall` in this folder.This installs all
-    necessary npm modules in both the client and server folder
-  - Open VS Code on this folder.
-  - Press Ctrl+Shift+B to start compiling the client and server.
-  - Switch to the Run and Debug View in the Sidebar (Ctrl+Shift+D).
-  - Select `Launch Client` from the drop down (if it is not already).
-  - Press ▷ to run the launch config (F5).
-  - Both build task and launch are available in [watch
-    mode](https://code.visualstudio.com/docs/editor/tasks#:~:text=The%20first%20entry%20executes,the%20HelloWorld.js%20file.)
-  - In the [Extension Development
-    Host](https://code.visualstudio.com/api/get-started/your-first-extension#:~:text=Then%2C%20inside%20the%20editor%2C%20press%20F5.%20This%20will%20compile%20and%20run%20the%20extension%20in%20a%20new%20Extension%20Development%20Host%20window.)
-    instance of VSCode, open a document in 'metamodelica' language mode.
-    - Check the console output of `MetaModelica Language Server` to see the parsed
-      tree of the opened file.
+- Run `npm install` and `npm run postinstall` in this folder.This installs all
+  necessary npm modules in both the client and server folder
+- Open VS Code on this folder.
+- Press Ctrl+Shift+B to start compiling the client and server.
+- Switch to the Run and Debug View in the Sidebar (Ctrl+Shift+D).
+- Select `Launch Client` from the drop down (if it is not already).
+- Press ▷ to run the launch config (F5).
+- Both build task and launch are available in [watch
+  mode](https://code.visualstudio.com/docs/editor/tasks#:~:text=The%20first%20entry%20executes,the%20HelloWorld.js%20file.)
+- In the [Extension Development
+  Host](https://code.visualstudio.com/api/get-started/your-first-extension#:~:text=Then%2C%20inside%20the%20editor%2C%20press%20F5.%20This%20will%20compile%20and%20run%20the%20extension%20in%20a%20new%20Extension%20Development%20Host%20window.)
+  instance of VSCode, open a document in 'metamodelica' language mode.
+  - Check the console output of `MetaModelica Language Server` to see the parsed
+    tree of the opened file.
 
 ## Build and Install Extension
 
-```
+```bash
 npx vsce package
 ```
 

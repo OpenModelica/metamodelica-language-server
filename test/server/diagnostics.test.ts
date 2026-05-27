@@ -175,6 +175,45 @@ const expectedDiagnostics: LSP.Diagnostic[] = [
   }
 ];
 
+const unusedMatchArgString = `
+function foo
+  input Integer a;
+  input Integer b;
+  input Integer fns;
+  output Boolean res;
+algorithm
+  res := match (a, b, fns)
+    case (1, 2, _) then true;
+    case (_, _, _) then false;
+  end match;
+end foo;
+`;
+
+const usedMatchArgString = `
+function foo
+  input Integer a;
+  input Integer b;
+  output Boolean res;
+algorithm
+  res := match (a, b)
+    case (1, 2) then true;
+    case (_, _) then false;
+  end match;
+end foo;
+`;
+
+const complexArgMatchString = `
+function foo
+  input Integer a;
+  output Boolean res;
+algorithm
+  res := match (someFunc(a), a)
+    case (_, 1) then true;
+    case (_, _) then false;
+  end match;
+end foo;
+`;
+
 suite('getAllDeclarationsInTree', () => {
   test('Definitions and types', async () => {
     const parser = await initializeMetaModelicaParser();
@@ -183,5 +222,48 @@ suite('getAllDeclarationsInTree', () => {
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
     assert.deepEqual(diagnostics, expectedDiagnostics);
+  });
+
+  test('Detects unused match argument', async () => {
+    const parser = await initializeMetaModelicaParser();
+    const tree = parser.parse(unusedMatchArgString);
+    const queries = new MetaModelicaQueries(parser.getLanguage());
+    const diagnostics = getDiagnosticsFromTree(tree, queries);
+
+    const unused = diagnostics.filter(d => d.message.startsWith('Unused match argument'));
+    assert.strictEqual(unused.length, 1, 'Exactly one unused argument expected');
+
+    const d = unused[0] as LSP.Diagnostic & { data: { unusedArgFix: { argName: string; edits: LSP.TextEdit[] } } };
+    assert.strictEqual(d.message, "Unused match argument 'fns': pattern is '_' in every case.");
+    assert.deepEqual(d.range, { start: { line: 7, character: 22 }, end: { line: 7, character: 25 } });
+    assert.strictEqual(d.severity, LSP.DiagnosticSeverity.Information);
+    assert.strictEqual(d.source, 'MetaModelica-language-server');
+
+    // Fix data: one edit for the input tuple and one per case branch
+    assert.strictEqual(d.data.unusedArgFix.argName, 'fns');
+    assert.strictEqual(d.data.unusedArgFix.edits.length, 3, 'Expect 1 input-tuple edit + 2 case-pattern edits');
+    assert.strictEqual(d.data.unusedArgFix.edits[0].newText, '(a, b)', 'Input tuple without fns');
+    assert.strictEqual(d.data.unusedArgFix.edits[1].newText, '(1, 2)', 'First case pattern without wildcard');
+    assert.strictEqual(d.data.unusedArgFix.edits[2].newText, '(_, _)', 'Second case pattern without wildcard');
+  });
+
+  test('Does not report when all match arguments are used', async () => {
+    const parser = await initializeMetaModelicaParser();
+    const tree = parser.parse(usedMatchArgString);
+    const queries = new MetaModelicaQueries(parser.getLanguage());
+    const diagnostics = getDiagnosticsFromTree(tree, queries);
+
+    const unused = diagnostics.filter(d => d.message.startsWith('Unused match argument'));
+    assert.strictEqual(unused.length, 0);
+  });
+
+  test('Does not flag function-call arguments (only plain identifiers)', async () => {
+    const parser = await initializeMetaModelicaParser();
+    const tree = parser.parse(complexArgMatchString);
+    const queries = new MetaModelicaQueries(parser.getLanguage());
+    const diagnostics = getDiagnosticsFromTree(tree, queries);
+
+    const unused = diagnostics.filter(d => d.message.startsWith('Unused match argument'));
+    assert.strictEqual(unused.length, 0, 'Function-call argument must not be flagged');
   });
 });
