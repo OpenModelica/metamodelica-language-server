@@ -5,3 +5,4 @@ out/
 dist/
 tree-sitter-metamodelica.wasm
 tree-sitter-gdbmi.wasm
+.devcontainer/claude

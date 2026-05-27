@@ -45,6 +45,7 @@ import { TextDocument} from 'vscode-languageserver-textdocument';
 import { initializeMetaModelicaParser } from './metaModelicaParser';
 import Analyzer from './analyzer';
 import { logger, setLogConnection, setLogLevel } from '../util/logger';
+import { UnusedArgFix } from './diagnostics';
 
 /**
  * MetaModelicaServer collection all the important bits and bobs.
@@ -90,6 +91,7 @@ export class MetaModelicaServer {
       documentSymbolProvider: true,
       colorProvider: false,
       semanticTokensProvider: undefined,
+      codeActionProvider: true,
       //diagnosticProvider: {
       //  interFileDependencies: false,
       //  workspaceDiagnostics: false
@@ -107,6 +109,7 @@ export class MetaModelicaServer {
     this.documents.listen(this.connection);
 
     connection.onDocumentSymbol(this.onDocumentSymbol.bind(this));
+    connection.onCodeAction(this.onCodeAction.bind(this));
 
     connection.onInitialized(async () => {
       initialized = true;
@@ -142,6 +145,31 @@ export class MetaModelicaServer {
     const diagnostics = this.analyzer.analyze(document);
 
     this.connection.sendDiagnostics({uri, diagnostics});
+  }
+
+  /**
+   * Provide quick-fix code actions for diagnostics that carry fix data.
+   */
+  private onCodeAction(params: LSP.CodeActionParams): LSP.CodeAction[] {
+    const actions: LSP.CodeAction[] = [];
+    for (const diagnostic of params.context.diagnostics) {
+      const data = diagnostic.data as { unusedArgFix?: UnusedArgFix } | undefined;
+      if (data?.unusedArgFix) {
+        const fix = data.unusedArgFix;
+        actions.push({
+          title: `Remove unused argument '${fix.argName}'`,
+          kind: LSP.CodeActionKind.QuickFix,
+          diagnostics: [diagnostic],
+          isPreferred: true,
+          edit: {
+            changes: {
+              [params.textDocument.uri]: fix.edits
+            }
+          }
+        });
+      }
+    }
+    return actions;
   }
 
   /**
