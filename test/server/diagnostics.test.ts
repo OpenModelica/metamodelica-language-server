@@ -257,6 +257,126 @@ suite('getAllDeclarationsInTree', () => {
     assert.strictEqual(unused.length, 0);
   });
 
+  // ── Unused protected variables ─────────────────────────────────────────
+
+  const unusedProtectedVarString = `
+function addOne
+  input Integer x;
+  output Integer y;
+protected
+  Integer unused;
+  Integer tmp;
+algorithm
+  tmp := x + 1;
+  y := tmp;
+end addOne;
+`;
+
+  const usedProtectedVarString = `
+function addOne
+  input Integer x;
+  output Integer y;
+protected
+  Integer tmp;
+algorithm
+  tmp := x + 1;
+  y := tmp;
+end addOne;
+`;
+
+  test('Detects unused protected variable', async () => {
+    const parser = await initializeMetaModelicaParser();
+    const tree = parser.parse(unusedProtectedVarString);
+    const queries = new MetaModelicaQueries(parser.getLanguage());
+    const diagnostics = getDiagnosticsFromTree(tree, queries);
+
+    const unused = diagnostics.filter(d => d.message.startsWith('Unused variable'));
+    assert.strictEqual(unused.length, 1, 'Exactly one unused variable expected');
+
+    const d = unused[0] as LSP.Diagnostic & { data: { unusedVarFix: { varName: string; edits: LSP.TextEdit[] } } };
+    assert.strictEqual(d.message, "Unused variable 'unused'.");
+    assert.strictEqual(d.severity, LSP.DiagnosticSeverity.Information);
+    assert.strictEqual(d.source, 'MetaModelica-language-server');
+
+    assert.strictEqual(d.data.unusedVarFix.varName, 'unused');
+    assert.strictEqual(d.data.unusedVarFix.edits.length, 1);
+    assert.strictEqual(d.data.unusedVarFix.edits[0].newText, '', 'Fix should delete the declaration line');
+  });
+
+  test('Does not report used protected variables', async () => {
+    const parser = await initializeMetaModelicaParser();
+    const tree = parser.parse(usedProtectedVarString);
+    const queries = new MetaModelicaQueries(parser.getLanguage());
+    const diagnostics = getDiagnosticsFromTree(tree, queries);
+
+    const unused = diagnostics.filter(d => d.message.startsWith('Unused variable'));
+    assert.strictEqual(unused.length, 0);
+  });
+
+  // ── Unused local variables in match ────────────────────────────────────
+
+  const unusedLocalVarString = `
+function inlineEqsLst
+  input list<Integer> inList;
+  output list<Integer> outList;
+algorithm
+  outList := match(inList)
+    local
+      Integer elem;
+      Integer unused;
+    case ({}) then {};
+    case (elem :: _) then {elem};
+  end match;
+end inlineEqsLst;
+`;
+
+  const unusedLocalMultiDeclString = `
+function foo
+  input list<Integer> xs;
+  output Integer res;
+algorithm
+  res := match(xs)
+    local
+      Integer a, unused;
+    case ({}) then 0;
+    case (a :: _) then a;
+  end match;
+end foo;
+`;
+
+  test('Detects unused local variable in match', async () => {
+    const parser = await initializeMetaModelicaParser();
+    const tree = parser.parse(unusedLocalVarString);
+    const queries = new MetaModelicaQueries(parser.getLanguage());
+    const diagnostics = getDiagnosticsFromTree(tree, queries);
+
+    const unused = diagnostics.filter(d => d.message.startsWith('Unused variable'));
+    assert.strictEqual(unused.length, 1, 'Exactly one unused local variable expected');
+
+    const d = unused[0] as LSP.Diagnostic & { data: { unusedVarFix: { varName: string; edits: LSP.TextEdit[] } } };
+    assert.strictEqual(d.message, "Unused variable 'unused'.");
+    assert.strictEqual(d.data.unusedVarFix.varName, 'unused');
+    assert.strictEqual(d.data.unusedVarFix.edits.length, 1);
+    assert.strictEqual(d.data.unusedVarFix.edits[0].newText, '');
+  });
+
+  test('Detects unused variable in comma-separated local declaration', async () => {
+    const parser = await initializeMetaModelicaParser();
+    const tree = parser.parse(unusedLocalMultiDeclString);
+    const queries = new MetaModelicaQueries(parser.getLanguage());
+    const diagnostics = getDiagnosticsFromTree(tree, queries);
+
+    const unused = diagnostics.filter(d => d.message.startsWith('Unused variable'));
+    assert.strictEqual(unused.length, 1, 'Exactly one unused variable from multi-decl line');
+
+    const d = unused[0] as LSP.Diagnostic & { data: { unusedVarFix: { varName: string; edits: LSP.TextEdit[] } } };
+    assert.strictEqual(d.message, "Unused variable 'unused'.");
+    assert.strictEqual(d.data.unusedVarFix.varName, 'unused');
+    // Fix removes ", unused" from the declaration list
+    assert.strictEqual(d.data.unusedVarFix.edits.length, 1);
+    assert.strictEqual(d.data.unusedVarFix.edits[0].newText, '');
+  });
+
   test('Does not flag function-call arguments (only plain identifiers)', async () => {
     const parser = await initializeMetaModelicaParser();
     const tree = parser.parse(complexArgMatchString);

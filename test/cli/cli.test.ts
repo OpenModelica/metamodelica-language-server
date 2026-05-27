@@ -38,7 +38,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { processFiles } from '../../src/cli/cli';
+import { processFiles, ALL_CHECKS } from '../../src/cli/cli';
 
 const unusedArgSource = `function foo
   input Integer a;
@@ -65,6 +65,29 @@ algorithm
     case (_, _) then false;
   end match;
 end foo;
+`;
+
+const unusedProtectedVarSource = `function addOne
+  input Integer x;
+  output Integer y;
+protected
+  Integer unused;
+  Integer tmp;
+algorithm
+  tmp := x + 1;
+  y := tmp;
+end addOne;
+`;
+
+const unusedProtectedVarFixed = `function addOne
+  input Integer x;
+  output Integer y;
+protected
+  Integer tmp;
+algorithm
+  tmp := x + 1;
+  y := tmp;
+end addOne;
 `;
 
 const noIssueSource = `function bar
@@ -140,6 +163,29 @@ suite('CLI processFiles', () => {
     assert.strictEqual(result.issuesFound, 2);
   });
 
+  test('detects unused protected variable (report mode)', async () => {
+    const filePath = path.join(tmpDir, 'unused_var.mo');
+    fs.writeFileSync(filePath, unusedProtectedVarSource);
+
+    const result = await processFiles([filePath], false);
+
+    assert.strictEqual(result.filesProcessed, 1);
+    assert.strictEqual(result.issuesFound, 1);
+    assert.strictEqual(result.issuesFixed, 0);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), unusedProtectedVarSource);
+  });
+
+  test('fixes unused protected variable in-place (fix mode)', async () => {
+    const filePath = path.join(tmpDir, 'unused_var.mo');
+    fs.writeFileSync(filePath, unusedProtectedVarSource);
+
+    const result = await processFiles([filePath], true);
+
+    assert.strictEqual(result.filesProcessed, 1);
+    assert.strictEqual(result.issuesFixed, 1);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), unusedProtectedVarFixed);
+  });
+
   test('fixes multiple files in a directory (fix mode)', async () => {
     fs.writeFileSync(path.join(tmpDir, 'a.mo'), unusedArgSource);
     fs.writeFileSync(path.join(tmpDir, 'b.mo'), unusedArgSource);
@@ -153,5 +199,61 @@ suite('CLI processFiles', () => {
       const content = fs.readFileSync(path.join(tmpDir, name), 'utf-8');
       assert.strictEqual(content, unusedArgFixed);
     }
+  });
+
+  // ── --check filter ─────────────────────────────────────────────────────
+
+  // A file that has both kinds of issue: one unused match arg and one unused protected var.
+  const bothIssuesSource = `function foo
+  input Integer a;
+  input Integer unused_arg;
+  output Integer res;
+protected
+  Integer unused_var;
+algorithm
+  res := match (a, unused_arg)
+    case (1, _) then 1;
+    case (_, _) then 0;
+  end match;
+end foo;
+`;
+
+  test('--check unused-var reports only unused variables', async () => {
+    const filePath = path.join(tmpDir, 'both.mo');
+    fs.writeFileSync(filePath, bothIssuesSource);
+
+    const result = await processFiles([filePath], false, new Set(['unused-var']));
+
+    assert.strictEqual(result.issuesFound, 1, 'Only the unused-var issue should be reported');
+  });
+
+  test('--check unused-match-arg reports only unused match arguments', async () => {
+    const filePath = path.join(tmpDir, 'both.mo');
+    fs.writeFileSync(filePath, bothIssuesSource);
+
+    const result = await processFiles([filePath], false, new Set(['unused-match-arg']));
+
+    assert.strictEqual(result.issuesFound, 1, 'Only the unused-match-arg issue should be reported');
+  });
+
+  test('all checks active by default (reports both issue types)', async () => {
+    const filePath = path.join(tmpDir, 'both.mo');
+    fs.writeFileSync(filePath, bothIssuesSource);
+
+    const result = await processFiles([filePath], false, new Set(ALL_CHECKS));
+
+    assert.strictEqual(result.issuesFound, 2, 'Both issue types should be reported');
+  });
+
+  test('--check unused-var fix mode leaves match-arg issues untouched', async () => {
+    const filePath = path.join(tmpDir, 'both.mo');
+    fs.writeFileSync(filePath, bothIssuesSource);
+
+    const result = await processFiles([filePath], true, new Set(['unused-var']));
+
+    assert.strictEqual(result.issuesFixed, 1);
+    // The unused match-arg issue must still be present after the fix.
+    const remaining = await processFiles([filePath], false, new Set(['unused-match-arg']));
+    assert.strictEqual(remaining.issuesFound, 1, 'Unused match arg should remain unfixed');
   });
 });
