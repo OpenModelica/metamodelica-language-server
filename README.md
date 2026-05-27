@@ -30,41 +30,45 @@ source files without opening VS Code.
 ### Usage
 
 ```text
-mmlsc [--fix] <paths...>
+mmlsc [--fix] [--check <name>]... <paths...>
 ```
 
 | Argument / option | Description |
 | ----------------- | ----------- |
 | `<paths...>` | Files or directories to process. Directories are scanned **recursively** for `.mo` files. |
 | `--fix` | Apply quick-fixes **in-place** and save the modified files. Without this flag the tool only reports issues and exits with `1`. |
+| `--check <name>` | Limit processing to a specific check (repeatable). When omitted all checks run. See [Supported quick-fixes](#supported-quick-fixes) for available names. |
 | `--help` | Print usage information. |
 
 ### Example
 
-Report all unused `match`/`matchcontinue` arguments in a source tree:
+Report all issues in a source tree:
 
 ```bash
-node out/cli.js src/
+mmlsc src/
 ```
 
-Apply the quick-fix for all detected issues:
-
-```bash
-node out/cli.js --fix src/
-```
-
-When installed globally (`npm install -g .` from the repository root after
-building), the tool is available as:
+Apply quick-fixes for all detected issues:
 
 ```bash
 mmlsc --fix src/
 ```
 
+Apply only the unused-variable fix:
+
+```bash
+mmlsc --fix --check unused-var src/
+```
+
+When installed globally (`npm install -g .` from the repository root after
+building), the tool is available as `mmlsc`.
+
 ### Supported quick-fixes
 
-| Diagnostic | Fix |
-|---|---|
-| Unused `match`/`matchcontinue` argument (pattern is `_` in every case) | Remove the argument from the input tuple and all case patterns |
+| Check name | Diagnostic | Fix |
+| --- | --- | --- |
+| `unused-var` | Unused variable in a `protected` section or `local` block | Remove the variable declaration |
+| `unused-match-arg` | Unused `match`/`matchcontinue` argument (pattern is `_` in every case) | Remove the argument from the input tuple and all case patterns |
 
 ## Installation
 

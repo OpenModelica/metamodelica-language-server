@@ -42,6 +42,10 @@ import { initializeMetaModelicaParser } from '../server/metaModelicaParser';
 import Analyzer from '../server/analyzer';
 import { UnusedArgFix, UnusedVarFix } from '../server/diagnostics';
 
+export type CheckName = 'unused-var' | 'unused-match-arg';
+
+export const ALL_CHECKS: CheckName[] = ['unused-var', 'unused-match-arg'];
+
 export interface ProcessResult {
   filesProcessed: number;
   issuesFound: number;
@@ -84,14 +88,33 @@ function applyEdits(content: string, uri: string, edits: LSP.TextEdit[]): string
 }
 
 /**
- * Process a set of file/directory paths: detect unused match arguments and
- * optionally apply the quick-fixes in-place.
- *
- * @param paths  File or directory paths to process.
- * @param fix    When true, apply quick-fixes and save files. When false, only report.
- * @returns      Summary of what was found and fixed.
+ * Return the fix edits for a diagnostic if it matches one of the requested
+ * checks, or undefined if it should be skipped.
  */
-export async function processFiles(paths: string[], fix: boolean): Promise<ProcessResult> {
+function getFixEdits(
+  data: { unusedArgFix?: UnusedArgFix; unusedVarFix?: UnusedVarFix } | undefined,
+  checks: Set<CheckName>,
+): LSP.TextEdit[] | undefined {
+  if (!data) { return undefined; }
+  if (checks.has('unused-match-arg') && data.unusedArgFix) { return data.unusedArgFix.edits; }
+  if (checks.has('unused-var') && data.unusedVarFix) { return data.unusedVarFix.edits; }
+  return undefined;
+}
+
+/**
+ * Process a set of file/directory paths: detect issues and optionally apply
+ * the quick-fixes in-place.
+ *
+ * @param paths   File or directory paths to process.
+ * @param fix     When true, apply quick-fixes and save files. When false, only report.
+ * @param checks  Which checks to run/fix. Defaults to all checks.
+ * @returns       Summary of what was found and fixed.
+ */
+export async function processFiles(
+  paths: string[],
+  fix: boolean,
+  checks: Set<CheckName> = new Set(ALL_CHECKS),
+): Promise<ProcessResult> {
   const parser = await initializeMetaModelicaParser();
   const analyzer = new Analyzer(parser);
 
@@ -118,7 +141,7 @@ export async function processFiles(paths: string[], fix: boolean): Promise<Proce
         const diagnostics = analyzer.analyze(doc);
         for (const diagnostic of diagnostics) {
           const data = diagnostic.data as { unusedArgFix?: UnusedArgFix; unusedVarFix?: UnusedVarFix } | undefined;
-          const edits = data?.unusedArgFix?.edits ?? data?.unusedVarFix?.edits;
+          const edits = getFixEdits(data, checks);
           if (edits) {
             content = applyEdits(content, uri, edits);
             fixed++;
@@ -138,7 +161,7 @@ export async function processFiles(paths: string[], fix: boolean): Promise<Proce
       let count = 0;
       for (const diagnostic of diagnostics) {
         const data = diagnostic.data as { unusedArgFix?: UnusedArgFix; unusedVarFix?: UnusedVarFix } | undefined;
-        if (data?.unusedArgFix || data?.unusedVarFix) {
+        if (getFixEdits(data, checks)) {
           const { line, character } = diagnostic.range.start;
           console.log(`${filePath}:${line + 1}:${character + 1}: ${diagnostic.message}`);
           count++;
@@ -160,19 +183,48 @@ async function main(): Promise<void> {
 
   if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
     console.log(
-      'Usage: mmlsc [--fix] <paths...>\n\n' +
-      '  --fix    Apply quick-fixes to files in-place (default: report only)\n' +
-      '  --help   Show this help\n\n' +
+      'Usage: mmlsc [--fix] [--check <name>]... <paths...>\n\n' +
+      '  --fix            Apply quick-fixes to files in-place (default: report only)\n' +
+      '  --check <name>   Limit to a specific check (repeatable; default: all checks)\n' +
+      '  --help           Show this help\n\n' +
+      '  Available check names:\n' +
+      '    unused-var         Unused protected/local variables\n' +
+      '    unused-match-arg   Unused match/matchcontinue arguments\n\n' +
       '  paths    Files or directories to process (.mo files, directories are scanned recursively)'
     );
     process.exit(0);
   }
 
   const fix = args.includes('--fix');
-  const paths = args.filter(a => !a.startsWith('--'));
+
+  // Collect --check <name> pairs
+  const requestedChecks: CheckName[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--check') {
+      const name = args[i + 1];
+      if (!name || name.startsWith('--')) {
+        console.error('Error: --check requires a check name argument');
+        process.exit(2);
+      }
+      if (!(ALL_CHECKS as string[]).includes(name)) {
+        console.error(`Error: unknown check '${name}'. Available: ${ALL_CHECKS.join(', ')}`);
+        process.exit(2);
+      }
+      requestedChecks.push(name as CheckName);
+      i++; // skip the name argument
+    }
+  }
+
+  const checks = requestedChecks.length > 0
+    ? new Set(requestedChecks)
+    : new Set(ALL_CHECKS);
+
+  const paths = args.filter((a, i) =>
+    !a.startsWith('--') && (i === 0 || args[i - 1] !== '--check')
+  );
 
   try {
-    const result = await processFiles(paths, fix);
+    const result = await processFiles(paths, fix, checks);
 
     if (fix) {
       console.log(`Processed ${result.filesProcessed} file(s), fixed ${result.issuesFixed} issue(s).`);
