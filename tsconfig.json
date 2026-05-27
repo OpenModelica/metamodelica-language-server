@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
+    "module": "Node16",
     "target": "es2022",
     "lib": [
       "es2022"
@@ -10,7 +10,7 @@
     "esModuleInterop": true,
     "sourceMap": true,
     "skipLibCheck": true,
-    "moduleResolution": "node",
+    "moduleResolution": "node16",
     "declaration": true,
     "strict": true, /* enable all strict type-checking options */
     /* Additional Checks */
