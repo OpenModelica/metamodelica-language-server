@@ -569,6 +569,41 @@ function buildDeadSilencedAssignEdit(node: Parser.Node, source: string): LSP.Tex
 }
 
 /**
+ * Return true when every `then`/`else` branch of `matchExpr` produces `()`
+ * (unit tuple) or `fail()`. Required before suggesting `_ := match` →
+ * `() := match`: if any branch returns a real value the rewrite would
+ * introduce a tuple-vs-scalar type error.
+ */
+function allMatchBranchesAreUnitOrFail(matchExpr: Parser.Node): boolean {
+  const isUnitOrFail = (expr: Parser.Node | undefined): boolean => {
+    if (!expr) { return false; }
+    const t = expr.text.trim();
+    return t === '()' || t === 'fail()';
+  };
+
+  const casesNode = matchExpr.namedChildren.find(c => c.type === 'cases');
+  if (!casesNode) { return false; }
+
+  // `then-expression` is the *last* `expression` child of each `onecase`
+  // (the first one is the pattern).
+  const onecases = casesNode.namedChildren.filter(c => c.type === 'onecase');
+  if (onecases.length === 0) { return false; }
+  for (const oc of onecases) {
+    const exprs = oc.namedChildren.filter(c => c.type === 'expression');
+    if (!isUnitOrFail(exprs[exprs.length - 1])) { return false; }
+  }
+
+  // Optional else clause lives in a `cases2` sibling with one `expression`.
+  const elseNode = casesNode.namedChildren.find(c => c.type === 'cases2');
+  if (elseNode) {
+    const elseExpr = elseNode.namedChildren.find(c => c.type === 'expression');
+    if (!isUnitOrFail(elseExpr)) { return false; }
+  }
+
+  return true;
+}
+
+/**
  * Find `_ := expr` statements in algorithm sections.
  *
  * Returns three kinds of results:
@@ -603,22 +638,27 @@ function getSilencedOutputs(rootNode: Parser.Node): {
     // The WILD node is nested inside lhsExpr.
     const wildNode = lhsExpr.namedChildren[0].namedChildren[0].namedChildren[0];
 
-    if (rhsExpr.namedChildren.some(c => c.type === 'match_expression')) {
+    const matchExpr = rhsExpr.namedChildren.find(c => c.type === 'match_expression');
+    if (matchExpr) {
       // `_ := match/matchcontinue` — match expressions cannot be used as
       // standalone statements, so `_ :=` is required. Replace `_` with `()`
-      // to make it explicit that the output is intentionally discarded.
-      wildcardMatch.push({
-        wildNode,
-        fix: {
-          edits: [{
-            range: LSP.Range.create(
-              wildNode.startPosition.row, wildNode.startPosition.column,
-              wildNode.endPosition.row, wildNode.endPosition.column,
-            ),
-            newText: '()',
-          }],
-        },
-      });
+      // *only if* every branch produces `()` / `fail()`; otherwise the
+      // match returns a non-tuple value and `() := match` would itself be
+      // a type error.
+      if (allMatchBranchesAreUnitOrFail(matchExpr)) {
+        wildcardMatch.push({
+          wildNode,
+          fix: {
+            edits: [{
+              range: LSP.Range.create(
+                wildNode.startPosition.row, wildNode.startPosition.column,
+                wildNode.endPosition.row, wildNode.endPosition.column,
+              ),
+              newText: '()',
+            }],
+          },
+        });
+      }
     } else if (isFunctionCallExpression(rhsExpr)) {
       // Remove `_ := ` by replacing the span from the start of assign_clause_a
       // to the start of the RHS expression with an empty string.

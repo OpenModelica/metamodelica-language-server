@@ -639,6 +639,30 @@ end foo;
     assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), expected);
   });
 
+  test('does not suggest `() :=` rewrite when match returns a non-unit value', async () => {
+    // Regression: rewriting `_ := match ... case _ then 0; end match;` to
+    // `() := match ...` is a type error because the match returns an
+    // Integer, not a tuple. Only branches that produce `()`/`fail()` are
+    // safe to rewrite — anything else must be left alone.
+    const src = `function foo
+  input Integer x;
+  output Integer r;
+algorithm
+  _ := match x
+    case 1 algorithm r := 1; then 0;
+    case _ algorithm r := 2; then 0;
+  end match;
+end foo;
+`;
+    const filePath = path.join(tmpDir, 'mixed_match.mo');
+    fs.writeFileSync(filePath, src);
+
+    const result = await processFiles([filePath], true, new Set(['wildcard-match']));
+
+    assert.strictEqual(result.issuesFixed, 0);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), src);
+  });
+
   test('does not flag protected declarations inside `partial function`', async () => {
     // Regression: `partial function` is a template — its protected vars
     // (`Token tok;` below) exist for inheriting functions to reuse, so
