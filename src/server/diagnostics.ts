@@ -54,6 +54,10 @@ export interface SilencedOutputFix {
   edits: LSP.TextEdit[];
 }
 
+export interface WildcardMatchFix {
+  edits: LSP.TextEdit[];
+}
+
 /**
  * Extract tuple element expressions from a `(a, b, c)` expression node.
  * Returns null if the expression is not a parenthesized tuple with at least two elements.
@@ -339,12 +343,19 @@ function isWildcardSimpleExpr(simpleExpr: Parser.Node): boolean {
 }
 
 /**
- * Find `_ := expr` statements in algorithm sections.  The return value of the
- * called function is silenced unnecessarily — in MetaModelica the assignment
- * can simply be omitted.
+ * Find `_ := expr` statements in algorithm sections.
+ *
+ * Returns two kinds of results:
+ * - `silenced`: `_ := functionCall()` where `_ :=` can simply be removed.
+ * - `wildcardMatch`: `_ := match/matchcontinue` where `_` should be replaced
+ *   with `()` because match expressions cannot be used as standalone statements.
  */
-function getSilencedOutputs(rootNode: Parser.Node): { wildNode: Parser.Node; fix: SilencedOutputFix }[] {
-  const results: { wildNode: Parser.Node; fix: SilencedOutputFix }[] = [];
+function getSilencedOutputs(rootNode: Parser.Node): {
+  silenced: { wildNode: Parser.Node; fix: SilencedOutputFix }[];
+  wildcardMatch: { wildNode: Parser.Node; fix: WildcardMatchFix }[];
+} {
+  const silenced: { wildNode: Parser.Node; fix: SilencedOutputFix }[] = [];
+  const wildcardMatch: { wildNode: Parser.Node; fix: WildcardMatchFix }[] = [];
 
   TreeSitterUtil.forEach(rootNode, (node) => {
     if (node.type !== 'assign_clause_a') { return true; }
@@ -358,22 +369,42 @@ function getSilencedOutputs(rootNode: Parser.Node): { wildNode: Parser.Node; fix
     // The WILD node is nested inside lhsExpr.
     const wildNode = lhsExpr.namedChildren[0].namedChildren[0].namedChildren[0];
 
-    // Remove `_ := ` by replacing the span from the start of assign_clause_a
-    // to the start of the RHS expression with an empty string.
-    const fix: SilencedOutputFix = {
-      edits: [{
-        range: LSP.Range.create(
-          node.startPosition.row, node.startPosition.column,
-          rhsExpr.startPosition.row, rhsExpr.startPosition.column,
-        ),
-        newText: '',
-      }],
-    };
-    results.push({ wildNode, fix });
+    if (rhsExpr.namedChildren.some(c => c.type === 'match_expression')) {
+      // `_ := match/matchcontinue` — match expressions cannot be used as
+      // standalone statements, so `_ :=` is required. Replace `_` with `()`
+      // to make it explicit that the output is intentionally discarded.
+      wildcardMatch.push({
+        wildNode,
+        fix: {
+          edits: [{
+            range: LSP.Range.create(
+              wildNode.startPosition.row, wildNode.startPosition.column,
+              wildNode.endPosition.row, wildNode.endPosition.column,
+            ),
+            newText: '()',
+          }],
+        },
+      });
+    } else {
+      // Remove `_ := ` by replacing the span from the start of assign_clause_a
+      // to the start of the RHS expression with an empty string.
+      silenced.push({
+        wildNode,
+        fix: {
+          edits: [{
+            range: LSP.Range.create(
+              node.startPosition.row, node.startPosition.column,
+              rhsExpr.startPosition.row, rhsExpr.startPosition.column,
+            ),
+            newText: '',
+          }],
+        },
+      });
+    }
     return true;
   });
 
-  return results;
+  return { silenced, wildcardMatch };
 }
 
 export function getDiagnosticsFromTree(tree: Parser.Tree, queries: MetaModelicaQueries): LSP.Diagnostic[] {
@@ -477,13 +508,21 @@ export function getDiagnosticsFromTree(tree: Parser.Tree, queries: MetaModelicaQ
   }
 
   // Inform about silenced outputs (`_ := expr`)
-  const silencedOutputs = getSilencedOutputs(tree.rootNode);
+  const { silenced: silencedOutputs, wildcardMatch: wildcardMatches } = getSilencedOutputs(tree.rootNode);
   for (const { wildNode, fix } of silencedOutputs) {
     const diagnostic = nodeToDiagnostic(
       wildNode,
       LSP.DiagnosticSeverity.Information,
       `Unnecessary output silencing: replace '_ := expr' with just 'expr'.`);
     (diagnostic as LSP.Diagnostic & { data: unknown }).data = { silencedOutputFix: fix };
+    diagnostics.push(diagnostic);
+  }
+  for (const { wildNode, fix } of wildcardMatches) {
+    const diagnostic = nodeToDiagnostic(
+      wildNode,
+      LSP.DiagnosticSeverity.Information,
+      `Replace '_ :=' with '() :=' before match/matchcontinue to ensure output of match/matchcontinue isn't ignored by accident.`);
+    (diagnostic as LSP.Diagnostic & { data: unknown }).data = { wildcardMatchFix: fix };
     diagnostics.push(diagnostic);
   }
 
