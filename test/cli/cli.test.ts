@@ -583,6 +583,62 @@ end testMatch;
     assert.strictEqual(result.issuesFound, 0, 'Wildcard-match should not be reported under unused-silenced-output');
   });
 
+  // ── dead-silenced-assign ──────────────────────────────────────────────
+
+  test('removes whole `_ := variable;` instead of stripping the LHS', async () => {
+    // Regression: stripping `_ :=` from `_ := eqIdx1;` left `eqIdx1;`,
+    // which isn't a valid MetaModelica statement. The whole statement must
+    // be dropped because a bare value reference has no observable effect.
+    const src = `function foo
+  input Integer eqIdx1;
+  input Integer eqIdx2;
+  output Integer eqIdxDel;
+algorithm
+  if intLe(1, 2) then eqIdxDel := eqIdx2; _ := eqIdx1; else eqIdxDel := eqIdx1; _ := eqIdx2; end if;
+end foo;
+`;
+    const expected = `function foo
+  input Integer eqIdx1;
+  input Integer eqIdx2;
+  output Integer eqIdxDel;
+algorithm
+  if intLe(1, 2) then eqIdxDel := eqIdx2; else eqIdxDel := eqIdx1; end if;
+end foo;
+`;
+    const filePath = path.join(tmpDir, 'dead_silenced.mo');
+    fs.writeFileSync(filePath, src);
+
+    const result = await processFiles([filePath], true, new Set(['dead-silenced-assign']));
+
+    assert.strictEqual(result.issuesFixed, 2);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), expected);
+  });
+
+  test('still strips `_ :=` when RHS is a function call', async () => {
+    // Function calls have observable effects, so dropping just `_ :=` is
+    // safe — verify the silenced-output path didn't regress when the
+    // dead-silenced-assign route was added.
+    const src = `function foo
+  input Integer x;
+algorithm
+  _ := sideEffect(x);
+end foo;
+`;
+    const expected = `function foo
+  input Integer x;
+algorithm
+  sideEffect(x);
+end foo;
+`;
+    const filePath = path.join(tmpDir, 'silenced_call.mo');
+    fs.writeFileSync(filePath, src);
+
+    const result = await processFiles([filePath], true, new Set(['unused-silenced-output']));
+
+    assert.strictEqual(result.issuesFixed, 1);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), expected);
+  });
+
   test('removes sole element of single-line `protected Real x;` section', async () => {
     // Regression: when `protected` and the element share a source line the
     // section-header edit and the element edit overlapped on the space

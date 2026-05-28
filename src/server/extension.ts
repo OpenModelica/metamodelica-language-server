@@ -46,8 +46,8 @@ import { initializeMetaModelicaParser } from './metaModelicaParser';
 import Analyzer from './analyzer';
 import { logger, setLogConnection, setLogLevel } from '../util/logger';
 import {
-  SilencedOutputFix, UnusedArgFix, UnusedCaseBindingFix, UnusedVarFix,
-  WildcardMatchFix,
+  DeadSilencedAssignFix, SilencedOutputFix, UnusedArgFix, UnusedCaseBindingFix,
+  UnusedVarFix, WildcardMatchFix,
 } from './diagnostics';
 
 /**
@@ -162,6 +162,7 @@ export class MetaModelicaServer {
         unusedCaseBindingFix?: UnusedCaseBindingFix;
         silencedOutputFix?: SilencedOutputFix;
         wildcardMatchFix?: WildcardMatchFix;
+        deadSilencedAssignFix?: DeadSilencedAssignFix;
       } | undefined;
       if (data?.unusedArgFix) {
         const fix = data.unusedArgFix;
@@ -223,6 +224,20 @@ export class MetaModelicaServer {
         const fix = data.wildcardMatchFix;
         actions.push({
           title: `Replace '_ :=' with '() :='`,
+          kind: LSP.CodeActionKind.QuickFix,
+          diagnostics: [diagnostic],
+          isPreferred: true,
+          edit: {
+            changes: {
+              [params.textDocument.uri]: fix.edits
+            }
+          }
+        });
+      }
+      if (data?.deadSilencedAssignFix) {
+        const fix = data.deadSilencedAssignFix;
+        actions.push({
+          title: `Remove dead '_ := …;' statement`,
           kind: LSP.CodeActionKind.QuickFix,
           diagnostics: [diagnostic],
           isPreferred: true,

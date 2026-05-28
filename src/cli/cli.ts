@@ -43,18 +43,18 @@ import * as LSP from 'vscode-languageserver/node';
 import { initializeMetaModelicaParser } from '../server/metaModelicaParser';
 import Analyzer from '../server/analyzer';
 import {
-  RedundantParensFix, SilencedOutputFix, UnusedArgFix, UnusedCaseBindingFix,
-  UnusedVarFix, WildcardMatchFix, WildcardTupleFix,
+  DeadSilencedAssignFix, RedundantParensFix, SilencedOutputFix, UnusedArgFix,
+  UnusedCaseBindingFix, UnusedVarFix, WildcardMatchFix, WildcardTupleFix,
 } from '../server/diagnostics';
 
 export type CheckName =
   | 'unused-var' | 'unused-match-arg' | 'unused-case-binding'
-  | 'unused-silenced-output' | 'wildcard-match'
+  | 'unused-silenced-output' | 'wildcard-match' | 'dead-silenced-assign'
   | 'redundant-parens' | 'wildcard-tuple';
 
 export const ALL_CHECKS: CheckName[] = [
   'unused-var', 'unused-match-arg', 'unused-case-binding',
-  'unused-silenced-output', 'wildcard-match',
+  'unused-silenced-output', 'wildcard-match', 'dead-silenced-assign',
   'redundant-parens', 'wildcard-tuple',
 ];
 
@@ -64,6 +64,7 @@ type FixData = {
   unusedCaseBindingFix?: UnusedCaseBindingFix;
   silencedOutputFix?: SilencedOutputFix;
   wildcardMatchFix?: WildcardMatchFix;
+  deadSilencedAssignFix?: DeadSilencedAssignFix;
   redundantParensFix?: RedundantParensFix;
   wildcardTupleFix?: WildcardTupleFix;
 };
@@ -132,6 +133,7 @@ function getFixEdits(
   if (checks.has('unused-case-binding') && data.unusedCaseBindingFix) { return data.unusedCaseBindingFix.edits; }
   if (checks.has('unused-silenced-output') && data.silencedOutputFix) { return data.silencedOutputFix.edits; }
   if (checks.has('wildcard-match') && data.wildcardMatchFix) { return data.wildcardMatchFix.edits; }
+  if (checks.has('dead-silenced-assign') && data.deadSilencedAssignFix) { return data.deadSilencedAssignFix.edits; }
   if (checks.has('redundant-parens') && data.redundantParensFix) { return data.redundantParensFix.edits; }
   if (checks.has('wildcard-tuple') && data.wildcardTupleFix) { return data.wildcardTupleFix.edits; }
   return undefined;
@@ -388,6 +390,7 @@ async function main(): Promise<void> {
       '    unused-case-binding     Unused case-pattern bindings (replace identifier with `_`)\n' +
       '    unused-silenced-output  Unnecessary output silencing (\'_ := expr\')\n' +
       '    wildcard-match          Wildcard before match/matchcontinue (\'_ :=\' → \'() :=\')\n' +
+      '    dead-silenced-assign    Drop entire `_ := variable;` (RHS has no side-effect)\n' +
       '    redundant-parens        Redundant single-element parens (match/case/assignment LHS)\n' +
       '    wildcard-tuple          All-wildcard case pattern `(_, _, _)` reducible to `_`\n\n' +
       '  paths    Files or directories to process (.mo files, directories are scanned recursively)'

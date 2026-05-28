@@ -58,6 +58,10 @@ export interface WildcardMatchFix {
   edits: LSP.TextEdit[];
 }
 
+export interface DeadSilencedAssignFix {
+  edits: LSP.TextEdit[];
+}
+
 export interface RedundantParensFix {
   edits: LSP.TextEdit[];
 }
@@ -499,19 +503,88 @@ function isWildcardSimpleExpr(simpleExpr: Parser.Node): boolean {
 }
 
 /**
+ * Return true if `expr` is a function-call expression like `f(x)` — i.e.
+ * expression > simple_expression > component_reference__function_call with
+ * both a `component_reference` and a `function_call` child. Bare identifiers,
+ * match expressions, parenthesized expressions etc. all return false. This is
+ * the only RHS shape where stripping `_ :=` keeps the statement valid: a
+ * bare variable reference (`x;`) or a match expression isn't a legal
+ * standalone statement.
+ */
+function isFunctionCallExpression(expr: Parser.Node): boolean {
+  if (expr.type !== 'expression') { return false; }
+  if (expr.namedChildren.length !== 1) { return false; }
+  const se = expr.namedChildren[0];
+  if (se.type !== 'simple_expression' || se.namedChildren.length !== 1) { return false; }
+  const crf = se.namedChildren[0];
+  if (crf.type !== 'component_reference__function_call') { return false; }
+  return crf.namedChildren.some(c => c.type === 'function_call');
+}
+
+/**
+ * Build an edit that removes the entire `_ := expr;` statement. Used when the
+ * RHS has no observable side-effect (bare value / variable reference), so
+ * dropping the whole statement is the only safe rewrite.
+ */
+function buildDeadSilencedAssignEdit(node: Parser.Node, source: string): LSP.TextEdit {
+  let startIdx = node.startIndex;
+  let endIdx = node.endIndex;
+  // `assign_clause_a` ends before the trailing `;`; consume any whitespace
+  // then the `;` itself.
+  while (endIdx < source.length && (source[endIdx] === ' ' || source[endIdx] === '\t')) {
+    endIdx++;
+  }
+  if (source[endIdx] === ';') { endIdx++; }
+
+  // If the statement is the only thing on its source line, drop the whole
+  // line; otherwise eat just one trailing space so we don't leave a double
+  // gap on a multi-statement line.
+  let scanEnd = endIdx;
+  while (scanEnd < source.length && (source[scanEnd] === ' ' || source[scanEnd] === '\t')) {
+    scanEnd++;
+  }
+  const restOfLineIsBlank = scanEnd >= source.length || source[scanEnd] === '\n';
+  if (restOfLineIsBlank) {
+    if (scanEnd < source.length) { scanEnd++; } // consume the newline
+    while (startIdx > 0 && (source[startIdx - 1] === ' ' || source[startIdx - 1] === '\t')) {
+      startIdx--;
+    }
+    endIdx = scanEnd;
+  } else if (source[endIdx] === ' ') {
+    endIdx++;
+  }
+
+  return {
+    range: LSP.Range.create(
+      offsetToPosition(source, startIdx),
+      offsetToPosition(source, endIdx),
+    ),
+    newText: '',
+  };
+}
+
+/**
  * Find `_ := expr` statements in algorithm sections.
  *
- * Returns two kinds of results:
- * - `silenced`: `_ := functionCall()` where `_ :=` can simply be removed.
+ * Returns three kinds of results:
+ * - `silenced`: `_ := functionCall()` where `_ :=` can simply be removed,
+ *   leaving the call as a statement.
  * - `wildcardMatch`: `_ := match/matchcontinue` where `_` should be replaced
- *   with `()` because match expressions cannot be used as standalone statements.
+ *   with `()` because match expressions cannot be used as standalone
+ *   statements.
+ * - `deadSilencedAssign`: `_ := x` (or any other non-call, non-match RHS).
+ *   Stripping `_ :=` would leave an invalid statement, but the assignment
+ *   itself observes nothing — so the entire `_ := expr;` is dropped.
  */
 function getSilencedOutputs(rootNode: Parser.Node): {
   silenced: { wildNode: Parser.Node; fix: SilencedOutputFix }[];
   wildcardMatch: { wildNode: Parser.Node; fix: WildcardMatchFix }[];
+  deadSilencedAssign: { wildNode: Parser.Node; fix: DeadSilencedAssignFix }[];
 } {
   const silenced: { wildNode: Parser.Node; fix: SilencedOutputFix }[] = [];
   const wildcardMatch: { wildNode: Parser.Node; fix: WildcardMatchFix }[] = [];
+  const deadSilencedAssign: { wildNode: Parser.Node; fix: DeadSilencedAssignFix }[] = [];
+  const source = rootNode.text;
 
   TreeSitterUtil.forEach(rootNode, (node) => {
     if (node.type !== 'assign_clause_a') { return true; }
@@ -541,7 +614,7 @@ function getSilencedOutputs(rootNode: Parser.Node): {
           }],
         },
       });
-    } else {
+    } else if (isFunctionCallExpression(rhsExpr)) {
       // Remove `_ := ` by replacing the span from the start of assign_clause_a
       // to the start of the RHS expression with an empty string.
       silenced.push({
@@ -556,11 +629,18 @@ function getSilencedOutputs(rootNode: Parser.Node): {
           }],
         },
       });
+    } else {
+      // Bare value / variable reference. `x;` is not a valid statement, so
+      // the only safe rewrite is to drop the whole `_ := expr;`.
+      deadSilencedAssign.push({
+        wildNode,
+        fix: { edits: [buildDeadSilencedAssignEdit(node, source)] },
+      });
     }
     return true;
   });
 
-  return { silenced, wildcardMatch };
+  return { silenced, wildcardMatch, deadSilencedAssign };
 }
 
 /**
@@ -922,7 +1002,11 @@ export function getDiagnosticsFromTree(tree: Parser.Tree, queries: MetaModelicaQ
   }
 
   // Inform about silenced outputs (`_ := expr`)
-  const { silenced: silencedOutputs, wildcardMatch: wildcardMatches } = getSilencedOutputs(tree.rootNode);
+  const {
+    silenced: silencedOutputs,
+    wildcardMatch: wildcardMatches,
+    deadSilencedAssign: deadSilencedAssigns,
+  } = getSilencedOutputs(tree.rootNode);
   for (const { wildNode, fix } of silencedOutputs) {
     const diagnostic = nodeToDiagnostic(
       wildNode,
@@ -937,6 +1021,14 @@ export function getDiagnosticsFromTree(tree: Parser.Tree, queries: MetaModelicaQ
       LSP.DiagnosticSeverity.Information,
       `Replace '_ :=' with '() :=' before match/matchcontinue to ensure output of match/matchcontinue isn't ignored by accident.`);
     (diagnostic as LSP.Diagnostic & { data: unknown }).data = { wildcardMatchFix: fix };
+    diagnostics.push(diagnostic);
+  }
+  for (const { wildNode, fix } of deadSilencedAssigns) {
+    const diagnostic = nodeToDiagnostic(
+      wildNode,
+      LSP.DiagnosticSeverity.Information,
+      `'_ := expr;' has no effect when the right-hand side is a bare value or variable; remove the whole statement.`);
+    (diagnostic as LSP.Diagnostic & { data: unknown }).data = { deadSilencedAssignFix: fix };
     diagnostics.push(diagnostic);
   }
 
