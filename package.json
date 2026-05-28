@@ -133,7 +133,7 @@
     "test-compile": "tsc -b ./",
     "lint": "eslint ./src/** ./test/** --ext .ts,.tsx",
     "tree-sitter-metamodelica": "cd src/server && node tree.sitter.metamodelica.download.js",
-    "tree-sitter-gdbmi": "cd node_modules/tree-sitter-gdbmi && npx tree-sitter generate && npx tree-sitter build --wasm --docker . && cd ../../src/debugger/parser && node tree.sitter.gdbmi.js",
+    "tree-sitter-gdbmi": "cd node_modules/tree-sitter-gdbmi && ../../node_modules/.bin/tree-sitter generate && ../../node_modules/.bin/tree-sitter build --wasm --docker . && cd ../../src/debugger/parser && node tree.sitter.gdbmi.js",
     "postinstall": "npm run tree-sitter-metamodelica && npm run tree-sitter-gdbmi",
     "test": "npm run test-compile && node ./dist/test/runTest",
     "all": "npm run postinstall && npm run esbuild && npm run lint && npm run test && npm run vscode:prepublish"
@@ -147,7 +147,8 @@
     "tree-sitter": "^0.21.1",
     "vscode-languageserver": "^9.0.1",
     "vscode-languageserver-textdocument": "^1.0.12",
-    "web-tree-sitter": "^0.22.5"
+    "web-tree-sitter": "^0.22.5",
+    "tree-sitter-cli": "^0.23.2"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
@@ -163,7 +164,6 @@
     "glob": "^13.0.6",
     "axios": "^1.16.1",
     "@vscode/debugadapter": "^1.68.0",
-    "tree-sitter-cli": "^0.23.2",
     "tree-sitter-gdbmi": "github:novafacing/tree-sitter-gdbmi"
   }
 }
