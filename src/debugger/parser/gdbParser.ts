@@ -613,7 +613,7 @@ export class GDBMIParser {
  * @returns tree-sitter-gdbmi parser
  */
 export async function initializeGdbMiParser(): Promise<Parser> {
-  await Parser.init({ locateFile: () => path.join(__dirname, 'web-tree-sitter.wasm') });
+  await Parser.init();
   const parser = new Parser;
 
   const gdbmiWasmFile = path.join(__dirname, 'tree-sitter-gdbmi.wasm');

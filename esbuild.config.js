@@ -40,7 +40,7 @@ async function main() {
     sourcesContent: false,
     platform: 'node',
     outfile: './out/server.js',
-    external: ['vscode'],
+    external: ['vscode', 'web-tree-sitter'],
     logLevel: 'warning',
     plugins: [
       /* add to the end of plugins array */
@@ -64,7 +64,7 @@ async function main() {
     sourcesContent: false,
     platform: 'node',
     outfile: './out/cli.js',
-    external: ['vscode'],
+    external: ['vscode', 'web-tree-sitter'],
     banner: { js: '#!/usr/bin/env node' },
     logLevel: 'warning',
     plugins: [

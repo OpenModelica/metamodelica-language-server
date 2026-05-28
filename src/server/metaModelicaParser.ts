@@ -49,7 +49,7 @@ import * as path from 'path';
  * @returns tree-sitter-metamodelica parser
  */
 export async function initializeMetaModelicaParser(): Promise<Parser> {
-  await Parser.init({ locateFile: () => path.join(__dirname, 'web-tree-sitter.wasm') });
+  await Parser.init();
   const parser = new Parser;
 
   const metamodelicaWasmFile = path.join(__dirname, 'tree-sitter-metamodelica.wasm');

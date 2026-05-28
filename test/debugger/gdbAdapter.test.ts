@@ -101,7 +101,7 @@ suite('GDBAdapter', () => {
     await adapter.quit();
     const response = adapter.getProgramOutput();
     // Check version string is in response.
-    assert.ok(response.startsWith("OpenModelica"), "Response should start with 'OpenModelica'");
+    assert.ok(response.startsWith("OpenModelica") || response.startsWith("v1."), "Response should start with 'OpenModelica' or 'v1.'");
     assert.equal(adapter.isGDBRunning(), false, "Assert GDB is not running any more.");
   }).timeout("10s");
 

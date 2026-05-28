@@ -140,6 +140,37 @@ npm run esbuild
   - Check the console output of `MetaModelica Language Server` to see the parsed
     tree of the opened file.
 
+## Testing
+
+The test suite runs inside a VS Code instance (via [`@vscode/test-electron`](https://github.com/microsoft/vscode-test)) and requires a display. It also exercises the GDB adapter, so `gdb` and `omc` must be on `PATH`.
+
+### Prerequisites
+
+- Node.js >= 22
+- `gdb`
+- `omc` (OpenModelica Compiler)
+- A display server — on a headless machine use `xvfb`
+
+### Running the tests
+
+Build the extension first, then run the suite:
+
+```bash
+npm install
+npm run esbuild
+npm test
+```
+
+On a headless machine (e.g. WSL2 without WSLg, or a CI server) provide a
+virtual display with `xvfb-run`:
+
+```bash
+sudo apt-get install -y xvfb gdb
+xvfb-run -a npm test
+```
+
+This is equivalent to what the CI workflow does.
+
 ## Build and Install Extension
 
 ```bash
