@@ -181,7 +181,7 @@ npx vsce package
 ## License
 
 **metamodelica-language-server** is licensed under the OSMC Public License v1.8, see
-[OSMC-License.txt](./OSMC-License.txt).
+[License.txt](./License.txt).
 
 ### 3rd Party Licenses
 
@@ -197,7 +197,7 @@ The debugger is based on [microsoft/vscode-mock-debug](https://github.com/micros
 
 [OpenModelica/tree-sitter-metamodelica](https://github.com/OpenModelica/tree-sitter-metamodelica)
 is included in this extension and is licensed under the [OSMC-PL
-v1.8](./server/OSMC-License.txt).
+v1.8](./server/License.txt).
 
 ## Acknowledgments
 
