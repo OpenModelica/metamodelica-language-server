@@ -38,6 +38,7 @@ mmlsc [--fix] [--check <name>]... <paths...>
 | `<paths...>` | Files or directories to process. Directories are scanned **recursively** for `.mo` files. |
 | `--fix` | Apply quick-fixes **in-place** and save the modified files. Without this flag the tool only reports issues and exits with `1`. |
 | `--check <name>` | Limit processing to a specific check (repeatable). When omitted all checks run. See [Supported quick-fixes](#supported-quick-fixes) for available names. |
+| `--jobs N` | Process files in parallel using `N` worker threads (default: number of CPU cores; pass `1` to disable). |
 | `--help` | Print usage information. |
 
 ### Example
@@ -69,8 +70,12 @@ building), the tool is available as `mmlsc`.
 | --- | --- | --- |
 | `unused-var` | Unused variable in a `protected` section or `local` block | Remove the variable declaration |
 | `unused-match-arg` | Unused `match`/`matchcontinue` argument (pattern is `_` in every case) | Remove the argument from the input tuple and all case patterns |
+| `unused-case-binding` | Unused binding in a `case` pattern — the bound identifier is never read in the case body | Replace the binding with `_` |
 | `unused-silenced-output` | Unnecessary output silencing (`_ := expr`) — the `_ :=` prefix can be omitted | Remove the `_ :=` prefix, keeping only the expression |
 | `wildcard-match` | Wildcard before `match`/`matchcontinue` (`_ := match …`) — `_` silently discards any return value; `()` is preferred because the compiler will error if a branch returns a non-unit value, catching accidental discards | Replace `_` with `()` |
+| `dead-silenced-assign` | Dead assignment `_ := variable;` where the RHS is a plain variable (no side effect) | Drop the entire statement |
+| `redundant-parens` | Single-element parentheses in a `match` input, `case` pattern, or assignment LHS | Unwrap the parentheses |
+| `wildcard-tuple` | All-wildcard tuple pattern `(_, _, _)` nested inside a `case` pattern — every element is already a wildcard | Collapse to a single `_` |
 
 ## Installation
 

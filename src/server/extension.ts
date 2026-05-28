@@ -46,8 +46,8 @@ import { initializeMetaModelicaParser } from './metaModelicaParser';
 import Analyzer from './analyzer';
 import { logger, setLogConnection, setLogLevel } from '../util/logger';
 import {
-  DeadSilencedAssignFix, SilencedOutputFix, UnusedArgFix, UnusedCaseBindingFix,
-  UnusedVarFix, WildcardMatchFix,
+  DeadSilencedAssignFix, RedundantParensFix, SilencedOutputFix, UnusedArgFix,
+  UnusedCaseBindingFix, UnusedVarFix, WildcardMatchFix, WildcardTupleFix,
 } from './diagnostics';
 
 /**
@@ -163,6 +163,8 @@ export class MetaModelicaServer {
         silencedOutputFix?: SilencedOutputFix;
         wildcardMatchFix?: WildcardMatchFix;
         deadSilencedAssignFix?: DeadSilencedAssignFix;
+        redundantParensFix?: RedundantParensFix;
+        wildcardTupleFix?: WildcardTupleFix;
       } | undefined;
       if (data?.unusedArgFix) {
         const fix = data.unusedArgFix;
@@ -238,6 +240,34 @@ export class MetaModelicaServer {
         const fix = data.deadSilencedAssignFix;
         actions.push({
           title: `Remove dead '_ := …;' statement`,
+          kind: LSP.CodeActionKind.QuickFix,
+          diagnostics: [diagnostic],
+          isPreferred: true,
+          edit: {
+            changes: {
+              [params.textDocument.uri]: fix.edits
+            }
+          }
+        });
+      }
+      if (data?.redundantParensFix) {
+        const fix = data.redundantParensFix;
+        actions.push({
+          title: `Remove redundant parentheses`,
+          kind: LSP.CodeActionKind.QuickFix,
+          diagnostics: [diagnostic],
+          isPreferred: true,
+          edit: {
+            changes: {
+              [params.textDocument.uri]: fix.edits
+            }
+          }
+        });
+      }
+      if (data?.wildcardTupleFix) {
+        const fix = data.wildcardTupleFix;
+        actions.push({
+          title: `Collapse all-wildcard tuple to '_'`,
           kind: LSP.CodeActionKind.QuickFix,
           diagnostics: [diagnostic],
           isPreferred: true,
