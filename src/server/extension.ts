@@ -45,7 +45,7 @@ import { TextDocument} from 'vscode-languageserver-textdocument';
 import { initializeMetaModelicaParser } from './metaModelicaParser';
 import Analyzer from './analyzer';
 import { logger, setLogConnection, setLogLevel } from '../util/logger';
-import { UnusedArgFix, UnusedVarFix, SilencedOutputFix } from './diagnostics';
+import { UnusedArgFix, UnusedVarFix, SilencedOutputFix, WildcardMatchFix } from './diagnostics';
 
 /**
  * MetaModelicaServer collection all the important bits and bobs.
@@ -153,7 +153,7 @@ export class MetaModelicaServer {
   private onCodeAction(params: LSP.CodeActionParams): LSP.CodeAction[] {
     const actions: LSP.CodeAction[] = [];
     for (const diagnostic of params.context.diagnostics) {
-      const data = diagnostic.data as { unusedArgFix?: UnusedArgFix; unusedVarFix?: UnusedVarFix; silencedOutputFix?: SilencedOutputFix } | undefined;
+      const data = diagnostic.data as { unusedArgFix?: UnusedArgFix; unusedVarFix?: UnusedVarFix; silencedOutputFix?: SilencedOutputFix; wildcardMatchFix?: WildcardMatchFix } | undefined;
       if (data?.unusedArgFix) {
         const fix = data.unusedArgFix;
         actions.push({
@@ -186,6 +186,20 @@ export class MetaModelicaServer {
         const fix = data.silencedOutputFix;
         actions.push({
           title: `Remove unnecessary '_ :='`,
+          kind: LSP.CodeActionKind.QuickFix,
+          diagnostics: [diagnostic],
+          isPreferred: true,
+          edit: {
+            changes: {
+              [params.textDocument.uri]: fix.edits
+            }
+          }
+        });
+      }
+      if (data?.wildcardMatchFix) {
+        const fix = data.wildcardMatchFix;
+        actions.push({
+          title: `Replace '_ :=' with '() :='`,
           kind: LSP.CodeActionKind.QuickFix,
           diagnostics: [diagnostic],
           isPreferred: true,

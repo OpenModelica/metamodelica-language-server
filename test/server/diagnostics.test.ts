@@ -452,4 +452,69 @@ end addOne;
     const silenced = diagnostics.filter(d => d.message.startsWith('Unnecessary output silencing'));
     assert.strictEqual(silenced.length, 0);
   });
+
+  const silencedMatchString = `
+function testMatch
+  input Integer x;
+algorithm
+  _ := match (x)
+    case 1 then ();
+    else ();
+  end match;
+end testMatch;
+`;
+
+  const silencedMatchContinueString = `
+function testMatchContinue
+  input Integer x;
+algorithm
+  _ := matchcontinue (x)
+    case 1 then ();
+    else ();
+  end matchcontinue;
+end testMatchContinue;
+`;
+
+  test('Flags _ := match with wildcard-match diagnostic and () fix', async () => {
+    const parser = await initializeMetaModelicaParser();
+    const tree = parser.parse(silencedMatchString)!;
+    const queries = new MetaModelicaQueries(parser.language!);
+    const diagnostics = getDiagnosticsFromTree(tree, queries);
+
+    const silenced = diagnostics.filter(d => d.message.startsWith('Unnecessary output silencing'));
+    assert.strictEqual(silenced.length, 0, 'must not emit silenced-output diagnostic for match');
+
+    const wildcard = diagnostics.filter(d => d.message.startsWith("Replace '_ :=' with '() :='"));
+    assert.strictEqual(wildcard.length, 1, 'exactly one wildcard-match diagnostic expected');
+
+    const d = wildcard[0] as LSP.Diagnostic & { data: { wildcardMatchFix: { edits: LSP.TextEdit[] } } };
+    assert.strictEqual(d.severity, LSP.DiagnosticSeverity.Information);
+    // Diagnostic points at the `_` token (line 4, column 2)
+    assert.deepEqual(d.range.start, { line: 4, character: 2 });
+    assert.deepEqual(d.range.end, { line: 4, character: 3 });
+    // Fix replaces just `_` with `()`
+    assert.strictEqual(d.data.wildcardMatchFix.edits.length, 1);
+    assert.strictEqual(d.data.wildcardMatchFix.edits[0].newText, '()');
+    assert.deepEqual(d.data.wildcardMatchFix.edits[0].range.start, { line: 4, character: 2 });
+    assert.deepEqual(d.data.wildcardMatchFix.edits[0].range.end, { line: 4, character: 3 });
+  });
+
+  test('Flags _ := matchcontinue with wildcard-match diagnostic and () fix', async () => {
+    const parser = await initializeMetaModelicaParser();
+    const tree = parser.parse(silencedMatchContinueString)!;
+    const queries = new MetaModelicaQueries(parser.language!);
+    const diagnostics = getDiagnosticsFromTree(tree, queries);
+
+    const silenced = diagnostics.filter(d => d.message.startsWith('Unnecessary output silencing'));
+    assert.strictEqual(silenced.length, 0, 'must not emit silenced-output diagnostic for matchcontinue');
+
+    const wildcard = diagnostics.filter(d => d.message.startsWith("Replace '_ :=' with '() :='"));
+    assert.strictEqual(wildcard.length, 1, 'exactly one wildcard-match diagnostic expected');
+
+    const d = wildcard[0] as LSP.Diagnostic & { data: { wildcardMatchFix: { edits: LSP.TextEdit[] } } };
+    assert.strictEqual(d.severity, LSP.DiagnosticSeverity.Information);
+    assert.deepEqual(d.range.start, { line: 4, character: 2 });
+    assert.deepEqual(d.range.end, { line: 4, character: 3 });
+    assert.strictEqual(d.data.wildcardMatchFix.edits[0].newText, '()');
+  });
 });
