@@ -1,8 +1,10 @@
+.claude/
+.devcontainer/claude
 .vscode-test
+CLAUDE.md
+dist/
 metamodelica-language-server*.vsix
 node_modules/
 out/
-dist/
-tree-sitter-metamodelica.wasm
 tree-sitter-gdbmi.wasm
-.devcontainer/claude
+tree-sitter-metamodelica.wasm
