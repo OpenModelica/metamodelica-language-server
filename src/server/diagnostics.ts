@@ -58,6 +58,23 @@ export interface WildcardMatchFix {
   edits: LSP.TextEdit[];
 }
 
+export interface DeadSilencedAssignFix {
+  edits: LSP.TextEdit[];
+}
+
+export interface RedundantParensFix {
+  edits: LSP.TextEdit[];
+}
+
+export interface WildcardTupleFix {
+  edits: LSP.TextEdit[];
+}
+
+export interface UnusedCaseBindingFix {
+  bindName: string;
+  edits: LSP.TextEdit[];
+}
+
 /**
  * Extract tuple element expressions from a `(a, b, c)` expression node.
  * Returns null if the expression is not a parenthesized tuple with at least two elements.
@@ -97,12 +114,38 @@ function isSimpleIdentifier(node: Parser.Node): boolean {
 
 /**
  * Build replacement text for a tuple after removing one element.
- * With one element remaining the outer parentheses are dropped.
+ * Parentheses are always kept: dropping them when only one element remains
+ * would concatenate the expression with the preceding `match`/`case` keyword
+ * (e.g. `match(x, y)` → `matchy`).
  */
 function buildTupleNewText(elements: Parser.Node[], skipIndex: number): string {
   const remaining = elements.filter((_, i) => i !== skipIndex).map(e => e.text);
-  if (remaining.length === 1) { return remaining[0]; }
   return '(' + remaining.join(', ') + ')';
+}
+
+/**
+ * Convert an LSP Position to a character offset in `source`.
+ */
+function offsetAtPosition(source: string, pos: LSP.Position): number {
+  let line = 0;
+  let i = 0;
+  while (i < source.length && line < pos.line) {
+    if (source[i] === '\n') { line++; }
+    i++;
+  }
+  return i + pos.character;
+}
+
+/**
+ * Convert a character offset in `source` to an LSP Position.
+ */
+function offsetToPosition(source: string, offset: number): LSP.Position {
+  let line = 0;
+  let lineStart = 0;
+  for (let i = 0; i < offset && i < source.length; i++) {
+    if (source[i] === '\n') { line++; lineStart = i + 1; }
+  }
+  return LSP.Position.create(line, offset - lineStart);
 }
 
 /**
@@ -143,22 +186,60 @@ function isNameUsed(name: string, scope: Parser.Node, skipNode: Parser.Node): bo
 
 /**
  * Build LSP TextEdits to remove a single component_declaration from its
- * parent element.  When it is the only declaration the entire element line
- * is removed; otherwise the declaration is excised from the comma-separated
- * list.
+ * parent element.  When it is the only declaration the entire element
+ * (plus its trailing `;` and surrounding whitespace) is removed; otherwise
+ * the declaration is excised from the comma-separated list.
+ *
+ * Multiple `element`s can share one source line (e.g. `Real a; Integer b;`),
+ * so the "remove the whole line" shortcut would also delete unrelated
+ * declarations. We compute the removal range from source character offsets
+ * instead.
  */
 function buildVarRemoveEdits(
   elementNode: Parser.Node,
   componentClause: Parser.Node,
   targetDecl: Parser.Node,
+  source: string,
 ): LSP.TextEdit[] {
   const declarations = componentClause.namedChildren.filter(c => c.type === 'component_declaration');
 
   if (declarations.length === 1) {
+    // The trailing `;` is a hidden token in the grammar and not part of
+    // the `element` node, so scan the source forward over whitespace to
+    // find and include it.
+    let endIdx = elementNode.endIndex;
+    while (endIdx < source.length && (source[endIdx] === ' ' || source[endIdx] === '\t')) {
+      endIdx++;
+    }
+    if (source[endIdx] === ';') { endIdx++; }
+    let startIdx = elementNode.startIndex;
+
+    // If everything to the right of the cut (up to the next newline) is
+    // whitespace, also consume that whitespace and the newline — and the
+    // leading whitespace on this line — so we don't leave a blank line.
+    let scanEnd = endIdx;
+    while (scanEnd < source.length && (source[scanEnd] === ' ' || source[scanEnd] === '\t')) {
+      scanEnd++;
+    }
+    const restOfLineIsBlank = scanEnd >= source.length || source[scanEnd] === '\n';
+    if (restOfLineIsBlank) {
+      if (scanEnd < source.length) { scanEnd++; } // consume the newline
+      // back up to the previous newline (or start of file) so leading
+      // indentation goes with the removed element.
+      while (startIdx > 0 && (source[startIdx - 1] === ' ' || source[startIdx - 1] === '\t')) {
+        startIdx--;
+      }
+      endIdx = scanEnd;
+    } else {
+      // Other content follows on the same line: also eat one trailing
+      // space so we don't leave `Integer i;  Integer j;`.
+      if (source[endIdx] === ' ') { endIdx++; }
+    }
+
     return [{
       range: LSP.Range.create(
-        elementNode.startPosition.row, 0,
-        elementNode.endPosition.row + 1, 0,
+        offsetToPosition(source, startIdx),
+        offsetToPosition(source, endIdx),
       ),
       newText: '',
     }];
@@ -210,7 +291,9 @@ function buildVarRemoveEdits(
 function checkElementDeclarations(
   elementNode: Parser.Node,
   scope: Parser.Node,
+  source: string,
   results: { varNode: Parser.Node; fix: UnusedVarFix }[],
+  sectionHeaderToAlsoRemove: Parser.Node | null = null,
 ): void {
   const componentClause = elementNode.namedChildren.find(c => c.type === 'component_clause');
   if (!componentClause) { return; }
@@ -221,15 +304,75 @@ function checkElementDeclarations(
     if (!identNode) { continue; }
     const name = identNode.text;
     if (!isNameUsed(name, scope, elementNode)) {
+      const edits = buildVarRemoveEdits(elementNode, componentClause, decl, source);
+      // When the whole element disappears (sole declaration on the clause)
+      // and it was the only element of its `protected` section, the section
+      // header keyword would otherwise be left stranded — splice it out too.
+      // The two edits can collide when both are on the same source line
+      // (`protected Real x;`): the header trims trailing whitespace forward
+      // while the element trims leading whitespace backward, so they share a
+      // character. Merge into one edit in that case.
+      if (sectionHeaderToAlsoRemove && declarations.length === 1) {
+        const headerEdit = buildSectionHeaderRemoveEdit(sectionHeaderToAlsoRemove, source);
+        const headerEnd = offsetAtPosition(source, headerEdit.range.end);
+        const elementStart = offsetAtPosition(source, edits[0].range.start);
+        if (headerEnd > elementStart) {
+          edits[0] = {
+            range: LSP.Range.create(headerEdit.range.start, edits[0].range.end),
+            newText: '',
+          };
+        } else {
+          edits.unshift(headerEdit);
+        }
+      }
       results.push({
         varNode: identNode,
-        fix: {
-          varName: name,
-          edits: buildVarRemoveEdits(elementNode, componentClause, decl),
-        },
+        fix: { varName: name, edits },
       });
     }
   }
+}
+
+/**
+ * Build an edit that removes a section header keyword (`protected` / `public`)
+ * together with the indentation on its line and the trailing newline.
+ */
+function buildSectionHeaderRemoveEdit(
+  header: Parser.Node,
+  source: string,
+): LSP.TextEdit {
+  let startIdx = header.startIndex;
+  let endIdx = header.endIndex;
+  while (endIdx < source.length && (source[endIdx] === ' ' || source[endIdx] === '\t')) { endIdx++; }
+  if (source[endIdx] === '\n') { endIdx++; }
+  while (startIdx > 0 && (source[startIdx - 1] === ' ' || source[startIdx - 1] === '\t')) { startIdx--; }
+  return {
+    range: LSP.Range.create(
+      offsetToPosition(source, startIdx),
+      offsetToPosition(source, endIdx),
+    ),
+    newText: '',
+  };
+}
+
+/**
+ * Return true when `composition` belongs to a non-partial `function` class
+ * definition. The grammar is composition → class_specifier → class_definition,
+ * where `class_definition` has a `class_type` whose first token (FUNCTION,
+ * PACKAGE, MODEL, RECORD, ...) names the class kind, and an optional
+ * `PARTIAL` sibling for `partial function ... end f;` templates. A partial
+ * function has no body of its own — its protected declarations exist for
+ * inheriting functions to reuse — so flagging them as locally unused is
+ * unsound.
+ */
+function isInsideFunction(composition: Parser.Node): boolean {
+  let cur: Parser.Node | null = composition.parent;
+  while (cur && cur.type !== 'class_definition') { cur = cur.parent; }
+  if (!cur) { return false; }
+  if (cur.children.some(c => c.type === 'PARTIAL')) { return false; }
+  const classType = cur.namedChildren.find(c => c.type === 'class_type');
+  if (!classType) { return false; }
+  return classType.children.some(c => c.type === 'FUNCTION');
 }
 
 /**
@@ -238,16 +381,38 @@ function checkElementDeclarations(
  */
 function getUnusedVariables(rootNode: Parser.Node): { varNode: Parser.Node; fix: UnusedVarFix }[] {
   const results: { varNode: Parser.Node; fix: UnusedVarFix }[] = [];
+  const source = rootNode.text;
 
   TreeSitterUtil.forEach(rootNode, (node) => {
-    // Protected variables declared inside a composition (function body)
-    if (node.type === 'composition') {
-      let inProtected = false;
+    // Protected variables declared inside a function's composition.
+    // Packages/models/classes also have `protected` sections, but those
+    // declare API-visible constants/members that may be referenced from
+    // *other* files, so a file-local "unused" judgement is unsound there.
+    if (node.type === 'composition' && isInsideFunction(node)) {
+      // Group children into sections so we know, for each protected
+      // element, whether removing it would also leave the section header
+      // (`protected` keyword) stranded — a function can have more than one
+      // `protected` section.
+      type Section = {
+        header: Parser.Node | null;
+        isProtected: boolean;
+        elements: Parser.Node[];
+      };
+      const sections: Section[] = [{ header: null, isProtected: false, elements: [] }];
       for (const child of node.children) {
-        if (child.type === 'PROTECTED') { inProtected = true; continue; }
-        if (child.type === 'PUBLIC') { inProtected = false; continue; }
-        if (inProtected && child.type === 'element') {
-          checkElementDeclarations(child, node, results);
+        if (child.type === 'PROTECTED') {
+          sections.push({ header: child, isProtected: true, elements: [] });
+        } else if (child.type === 'PUBLIC') {
+          sections.push({ header: child, isProtected: false, elements: [] });
+        } else if (child.type === 'element') {
+          sections[sections.length - 1].elements.push(child);
+        }
+      }
+      for (const sec of sections) {
+        if (!sec.isProtected) { continue; }
+        const headerToRemove = sec.elements.length === 1 ? sec.header : null;
+        for (const el of sec.elements) {
+          checkElementDeclarations(el, node, source, results, headerToRemove);
         }
       }
     }
@@ -258,7 +423,7 @@ function getUnusedVariables(rootNode: Parser.Node): { varNode: Parser.Node; fix:
       if (localClause) {
         for (const child of localClause.namedChildren) {
           if (child.type === 'element') {
-            checkElementDeclarations(child, node, results);
+            checkElementDeclarations(child, node, source, results);
           }
         }
       }
@@ -343,19 +508,136 @@ function isWildcardSimpleExpr(simpleExpr: Parser.Node): boolean {
 }
 
 /**
+ * Return true if `expr` is a function-call expression like `f(x)` — i.e.
+ * expression > simple_expression > component_reference__function_call with
+ * both a `component_reference` and a `function_call` child. Bare identifiers,
+ * match expressions, parenthesized expressions etc. all return false. This is
+ * the only RHS shape where stripping `_ :=` keeps the statement valid: a
+ * bare variable reference (`x;`) or a match expression isn't a legal
+ * standalone statement.
+ */
+function isFunctionCallExpression(expr: Parser.Node): boolean {
+  if (expr.type !== 'expression') { return false; }
+  if (expr.namedChildren.length !== 1) { return false; }
+  const se = expr.namedChildren[0];
+  if (se.type !== 'simple_expression' || se.namedChildren.length !== 1) { return false; }
+  const crf = se.namedChildren[0];
+  if (crf.type !== 'component_reference__function_call') { return false; }
+  return crf.namedChildren.some(c => c.type === 'function_call');
+}
+
+/**
+ * Build an edit that removes the entire `_ := expr;` statement. Used when the
+ * RHS has no observable side-effect (bare value / variable reference), so
+ * dropping the whole statement is the only safe rewrite.
+ */
+function buildDeadSilencedAssignEdit(node: Parser.Node, source: string): LSP.TextEdit {
+  let startIdx = node.startIndex;
+  let endIdx = node.endIndex;
+  // `assign_clause_a` ends before the trailing `;`; consume any whitespace
+  // then the `;` itself.
+  while (endIdx < source.length && (source[endIdx] === ' ' || source[endIdx] === '\t')) {
+    endIdx++;
+  }
+  if (source[endIdx] === ';') { endIdx++; }
+
+  // If the statement is the only thing on its source line, drop the whole
+  // line; otherwise eat just one trailing space so we don't leave a double
+  // gap on a multi-statement line.
+  let scanEnd = endIdx;
+  while (scanEnd < source.length && (source[scanEnd] === ' ' || source[scanEnd] === '\t')) {
+    scanEnd++;
+  }
+  const restOfLineIsBlank = scanEnd >= source.length || source[scanEnd] === '\n';
+  if (restOfLineIsBlank) {
+    if (scanEnd < source.length) { scanEnd++; } // consume the newline
+    while (startIdx > 0 && (source[startIdx - 1] === ' ' || source[startIdx - 1] === '\t')) {
+      startIdx--;
+    }
+    endIdx = scanEnd;
+  } else if (source[endIdx] === ' ') {
+    endIdx++;
+  }
+
+  return {
+    range: LSP.Range.create(
+      offsetToPosition(source, startIdx),
+      offsetToPosition(source, endIdx),
+    ),
+    newText: '',
+  };
+}
+
+/**
+ * Return true when every `then`/`else` branch of `matchExpr` produces `()`
+ * (unit tuple) or `fail()`, AND at least one branch is literally `()`.
+ * Required before suggesting `_ := match` → `() := match`:
+ *   - If any branch returns a real value the rewrite would introduce a
+ *     tuple-vs-scalar type error.
+ *   - `fail()` is polymorphic — it doesn't return — so a match made up
+ *     entirely of `fail()` branches has no inferable return type of
+ *     `()`, and `() := match` would still be ill-typed (or at best
+ *     change a polymorphic match into a unit-typed one).
+ */
+function allMatchBranchesAreUnitOrFail(matchExpr: Parser.Node): boolean {
+  const classify = (expr: Parser.Node | undefined): 'unit' | 'fail' | 'other' => {
+    if (!expr) { return 'other'; }
+    const t = expr.text.trim();
+    if (t === '()') { return 'unit'; }
+    if (t === 'fail()') { return 'fail'; }
+    return 'other';
+  };
+
+  const casesNode = matchExpr.namedChildren.find(c => c.type === 'cases');
+  if (!casesNode) { return false; }
+
+  let sawUnit = false;
+
+  // `then-expression` is the *last* `expression` child of each `onecase`
+  // (the first one is the pattern).
+  const onecases = casesNode.namedChildren.filter(c => c.type === 'onecase');
+  if (onecases.length === 0) { return false; }
+  for (const oc of onecases) {
+    const exprs = oc.namedChildren.filter(c => c.type === 'expression');
+    const kind = classify(exprs[exprs.length - 1]);
+    if (kind === 'other') { return false; }
+    if (kind === 'unit') { sawUnit = true; }
+  }
+
+  // Optional else clause lives in a `cases2` sibling with one `expression`.
+  const elseNode = casesNode.namedChildren.find(c => c.type === 'cases2');
+  if (elseNode) {
+    const elseExpr = elseNode.namedChildren.find(c => c.type === 'expression');
+    const kind = classify(elseExpr);
+    if (kind === 'other') { return false; }
+    if (kind === 'unit') { sawUnit = true; }
+  }
+
+  return sawUnit;
+}
+
+/**
  * Find `_ := expr` statements in algorithm sections.
  *
- * Returns two kinds of results:
- * - `silenced`: `_ := functionCall()` where `_ :=` can simply be removed.
+ * Returns three kinds of results:
+ * - `silenced`: `_ := functionCall()` where `_ :=` can simply be removed,
+ *   leaving the call as a statement.
  * - `wildcardMatch`: `_ := match/matchcontinue` where `_` should be replaced
- *   with `()` because match expressions cannot be used as standalone statements.
+ *   with `()` because match expressions cannot be used as standalone
+ *   statements.
+ * - `deadSilencedAssign`: `_ := x` (or any other non-call, non-match RHS).
+ *   Stripping `_ :=` would leave an invalid statement, but the assignment
+ *   itself observes nothing — so the entire `_ := expr;` is dropped.
  */
 function getSilencedOutputs(rootNode: Parser.Node): {
   silenced: { wildNode: Parser.Node; fix: SilencedOutputFix }[];
   wildcardMatch: { wildNode: Parser.Node; fix: WildcardMatchFix }[];
+  deadSilencedAssign: { wildNode: Parser.Node; fix: DeadSilencedAssignFix }[];
 } {
   const silenced: { wildNode: Parser.Node; fix: SilencedOutputFix }[] = [];
   const wildcardMatch: { wildNode: Parser.Node; fix: WildcardMatchFix }[] = [];
+  const deadSilencedAssign: { wildNode: Parser.Node; fix: DeadSilencedAssignFix }[] = [];
+  const source = rootNode.text;
 
   TreeSitterUtil.forEach(rootNode, (node) => {
     if (node.type !== 'assign_clause_a') { return true; }
@@ -369,23 +651,28 @@ function getSilencedOutputs(rootNode: Parser.Node): {
     // The WILD node is nested inside lhsExpr.
     const wildNode = lhsExpr.namedChildren[0].namedChildren[0].namedChildren[0];
 
-    if (rhsExpr.namedChildren.some(c => c.type === 'match_expression')) {
+    const matchExpr = rhsExpr.namedChildren.find(c => c.type === 'match_expression');
+    if (matchExpr) {
       // `_ := match/matchcontinue` — match expressions cannot be used as
       // standalone statements, so `_ :=` is required. Replace `_` with `()`
-      // to make it explicit that the output is intentionally discarded.
-      wildcardMatch.push({
-        wildNode,
-        fix: {
-          edits: [{
-            range: LSP.Range.create(
-              wildNode.startPosition.row, wildNode.startPosition.column,
-              wildNode.endPosition.row, wildNode.endPosition.column,
-            ),
-            newText: '()',
-          }],
-        },
-      });
-    } else {
+      // *only if* every branch produces `()` / `fail()`; otherwise the
+      // match returns a non-tuple value and `() := match` would itself be
+      // a type error.
+      if (allMatchBranchesAreUnitOrFail(matchExpr)) {
+        wildcardMatch.push({
+          wildNode,
+          fix: {
+            edits: [{
+              range: LSP.Range.create(
+                wildNode.startPosition.row, wildNode.startPosition.column,
+                wildNode.endPosition.row, wildNode.endPosition.column,
+              ),
+              newText: '()',
+            }],
+          },
+        });
+      }
+    } else if (isFunctionCallExpression(rhsExpr)) {
       // Remove `_ := ` by replacing the span from the start of assign_clause_a
       // to the start of the RHS expression with an empty string.
       silenced.push({
@@ -400,11 +687,276 @@ function getSilencedOutputs(rootNode: Parser.Node): {
           }],
         },
       });
+    } else {
+      // Bare value / variable reference. `x;` is not a valid statement, so
+      // the only safe rewrite is to drop the whole `_ := expr;`.
+      deadSilencedAssign.push({
+        wildNode,
+        fix: { edits: [buildDeadSilencedAssignEdit(node, source)] },
+      });
     }
     return true;
   });
 
-  return { silenced, wildcardMatch };
+  return { silenced, wildcardMatch, deadSilencedAssign };
+}
+
+/**
+ * Return the inner expression when `simpleExpr` is a single-element
+ * parenthesized expression `(x)` — i.e. a `simple_expression` whose
+ * children are exactly LPAR, expression, RPAR (no comma, no trailing
+ * operator like `::`). For example `(r as X)::rest` is rejected because
+ * the parens only wrap the head of a cons, not the whole expression.
+ */
+function getSingleElementParensInner(simpleExpr: Parser.Node): Parser.Node | null {
+  if (simpleExpr.type !== 'simple_expression') { return null; }
+  const cs = simpleExpr.children;
+  if (cs.length !== 3) { return null; }
+  if (cs[0].type !== 'LPAR' || cs[2].type !== 'RPAR') { return null; }
+  if (cs[1].type !== 'expression') { return null; }
+  return cs[1];
+}
+
+/**
+ * Build the edit that replaces `(x)` with `x`. Stripping the parens can fuse
+ * the inner text with neighbouring tokens on either side — e.g. `match(x)` →
+ * `matchx`, or `case(_)then` → `case _then` — so we pad with a space on
+ * whichever side would otherwise concatenate two identifier-like characters.
+ */
+function buildRemoveParensEdit(
+  outer: Parser.Node,
+  inner: Parser.Node,
+  source: string,
+): LSP.TextEdit {
+  const idChar = /[A-Za-z0-9_]/;
+  const prevChar = outer.startIndex > 0 ? source.charAt(outer.startIndex - 1) : ' ';
+  const nextChar = outer.endIndex < source.length ? source.charAt(outer.endIndex) : ' ';
+  const innerText = inner.text;
+  const leadSpace = idChar.test(prevChar) ? ' ' : '';
+  const trailSpace = idChar.test(nextChar) && idChar.test(innerText.charAt(innerText.length - 1)) ? ' ' : '';
+  return {
+    range: TreeSitterUtil.range(outer),
+    newText: leadSpace + innerText + trailSpace,
+  };
+}
+
+function reportParens(
+  results: { node: Parser.Node; fix: RedundantParensFix }[],
+  simpleExpr: Parser.Node,
+  source: string,
+): void {
+  const inner = getSingleElementParensInner(simpleExpr);
+  if (!inner) { return; }
+  results.push({
+    node: simpleExpr,
+    fix: { edits: [buildRemoveParensEdit(simpleExpr, inner, source)] },
+  });
+}
+
+/**
+ * Find redundant single-element parens in three positions:
+ *   - `match (x)` inputs
+ *   - `case  (x)` patterns
+ *   - `(x) := f(...)` assignment LHS
+ * In each case the parens wrap a single expression (not a tuple) and can be
+ * dropped without changing semantics.
+ */
+function getRedundantParens(rootNode: Parser.Node):
+  { node: Parser.Node; fix: RedundantParensFix }[] {
+  const results: { node: Parser.Node; fix: RedundantParensFix }[] = [];
+  const source = rootNode.text;
+
+  TreeSitterUtil.forEach(rootNode, (node) => {
+    if (node.type === 'match_expression') {
+      const inputExpr = node.namedChildren.find(c => c.type === 'expression');
+      const inputSimple = inputExpr?.namedChildren.find(c => c.type === 'simple_expression');
+      if (inputSimple) { reportParens(results, inputSimple, source); }
+
+      const casesNode = node.namedChildren.find(c => c.type === 'cases');
+      if (casesNode) {
+        for (const onecase of casesNode.namedChildren.filter(c => c.type === 'onecase')) {
+          const patternExpr = onecase.namedChildren.find(c => c.type === 'expression');
+          const patternSimple = patternExpr?.namedChildren.find(c => c.type === 'simple_expression');
+          if (patternSimple) { reportParens(results, patternSimple, source); }
+        }
+      }
+    } else if (node.type === 'assign_clause_a') {
+      const lhs = node.namedChildren.find(c => c.type === 'simple_expression');
+      if (lhs) { reportParens(results, lhs, source); }
+    }
+    return true;
+  });
+
+  return results;
+}
+
+/**
+ * Return true if `simpleExpr` is a parenthesized tuple where every element
+ * is a bare wildcard `_`.
+ */
+function isAllWildcardTuple(simpleExpr: Parser.Node): boolean {
+  if (simpleExpr.type !== 'simple_expression') { return false; }
+  const cs = simpleExpr.children;
+  // Must be exactly LPAR, expression, (COMMA expression)+, RPAR. Anything
+  // else (e.g. a trailing `::rest` cons) means the parens don't wrap the
+  // whole expression.
+  if (cs.length < 5) { return false; }
+  if (cs[0].type !== 'LPAR' || cs[cs.length - 1].type !== 'RPAR') { return false; }
+  for (let i = 1; i < cs.length - 1; i++) {
+    const expected = i % 2 === 1 ? 'expression' : 'COMMA';
+    if (cs[i].type !== expected) { return false; }
+  }
+  const elements = simpleExpr.namedChildren.filter(c => c.type === 'expression');
+  for (const el of elements) {
+    const inner = el.namedChildren.find(c => c.type === 'simple_expression');
+    if (!inner || !isWildcardSimpleExpr(inner)) { return false; }
+  }
+  return true;
+}
+
+/**
+ * Return true if `simpleExpr` is *the* top-level pattern of a `case` branch
+ * or *the* top-level input expression of `match`. Such positions are deliberately
+ * excluded from the wildcard-tuple fix: collapsing them changes the visible
+ * arity at the match boundary and is better handled by the unused-match-arg
+ * detector.
+ */
+function isTopLevelMatchPattern(simpleExpr: Parser.Node): boolean {
+  const parent = simpleExpr.parent;
+  if (!parent || parent.type !== 'expression') { return false; }
+  const grand = parent.parent;
+  return grand?.type === 'onecase' || grand?.type === 'match_expression';
+}
+
+/**
+ * Find `(_, _, ..., _)` tuples nested inside larger patterns and collapse
+ * them to a single `_`. Top-level case patterns and match inputs are
+ * intentionally skipped — see `isTopLevelMatchPattern`.
+ */
+function getWildcardTuples(rootNode: Parser.Node):
+  { node: Parser.Node; fix: WildcardTupleFix }[] {
+  const results: { node: Parser.Node; fix: WildcardTupleFix }[] = [];
+  const source = rootNode.text;
+
+  TreeSitterUtil.forEach(rootNode, (node) => {
+    if (!isAllWildcardTuple(node)) { return true; }
+    if (isTopLevelMatchPattern(node)) { return true; }
+
+    const idChar = /[A-Za-z0-9_]/;
+    const prevChar = node.startIndex > 0 ? source.charAt(node.startIndex - 1) : ' ';
+    const nextChar = node.endIndex < source.length ? source.charAt(node.endIndex) : ' ';
+    const leadSpace = idChar.test(prevChar) ? ' ' : '';
+    const trailSpace = idChar.test(nextChar) ? ' ' : '';
+    results.push({
+      node,
+      fix: {
+        edits: [{
+          range: TreeSitterUtil.range(node),
+          newText: leadSpace + '_' + trailSpace,
+        }],
+      },
+    });
+    return true;
+  });
+
+  return results;
+}
+
+/**
+ * Return the IDENT leaf of an `expression` node that satisfies
+ * `isSimpleIdentifier`. Returns null otherwise.
+ */
+function getSimpleIdentifierLeaf(expr: Parser.Node): Parser.Node | null {
+  if (!isSimpleIdentifier(expr)) { return null; }
+  const se = expr.namedChildren[0];
+  const crf = se.namedChildren[0];
+  const cr = crf.namedChildren[0];
+  return cr.namedChildren[0];
+}
+
+/**
+ * Find pattern bindings inside `case` patterns that bind an identifier which
+ * is never referenced — in the case body, anywhere else in the same
+ * `onecase`, *or* anywhere else in the enclosing function. The last check
+ * matters because MetaModelica `match` patterns can write to outer-scope
+ * variables: a pattern `type_ = ty` may assign to a protected `ty` that is
+ * read later, after `end match`.
+ *
+ * Example:
+ *   case (x, i) then x;   →   case (x, _) then x;
+ *
+ * Reported only when the name appears exactly once in the `onecase` AND
+ * does not appear anywhere outside it within the enclosing `class_definition`
+ * (so deliberate pattern-equality bindings like `case (x, x)` and outer-
+ * scope binding writes like `case PROP(type_ = ty)` followed by `... := ty`
+ * are both left alone).
+ */
+function getUnusedCaseBindings(rootNode: Parser.Node):
+  { identNode: Parser.Node; fix: UnusedCaseBindingFix }[] {
+  const results: { identNode: Parser.Node; fix: UnusedCaseBindingFix }[] = [];
+
+  TreeSitterUtil.forEach(rootNode, (node) => {
+    if (node.type !== 'onecase') { return true; }
+
+    const expressions = node.namedChildren.filter(c => c.type === 'expression');
+    if (expressions.length === 0) { return true; }
+    const pattern = expressions[0];
+
+    const insideCounts = new Map<string, number>();
+    function countInside(n: Parser.Node): void {
+      if (n.type === 'IDENT') {
+        insideCounts.set(n.text, (insideCounts.get(n.text) ?? 0) + 1);
+      }
+      for (const c of n.children) { countInside(c); }
+    }
+    countInside(node);
+
+    let scope: Parser.Node | null = node.parent;
+    while (scope && scope.type !== 'class_definition') { scope = scope.parent; }
+    const enclosing: Parser.Node = scope ?? rootNode;
+
+    const outsideNames = new Set<string>();
+    const skipStart = node.startIndex;
+    const skipEnd = node.endIndex;
+    function collectOutside(n: Parser.Node): void {
+      if (n.startIndex === skipStart && n.endIndex === skipEnd) { return; }
+      // Skip the IDENT that names a `declaration` itself — that is the
+      // variable's binding occurrence, not a read of it. Modifications and
+      // other deeper IDENTs under the declaration *are* uses and remain.
+      if (n.type === 'IDENT' && n.parent?.type !== 'declaration') {
+        outsideNames.add(n.text);
+      }
+      for (const c of n.children) { collectOutside(c); }
+    }
+    collectOutside(enclosing);
+
+    function visit(e: Parser.Node): void {
+      if (e.type === 'expression') {
+        const ident = getSimpleIdentifierLeaf(e);
+        if (ident) {
+          const name = ident.text;
+          if (name !== '_'
+              && (insideCounts.get(name) ?? 0) === 1
+              && !outsideNames.has(name)) {
+            results.push({
+              identNode: ident,
+              fix: {
+                bindName: name,
+                edits: [{ range: TreeSitterUtil.range(ident), newText: '_' }],
+              },
+            });
+          }
+          return;
+        }
+      }
+      for (const c of e.namedChildren) { visit(c); }
+    }
+    visit(pattern);
+
+    return true;
+  });
+
+  return results;
 }
 
 export function getDiagnosticsFromTree(tree: Parser.Tree, queries: MetaModelicaQueries): LSP.Diagnostic[] {
@@ -508,7 +1060,11 @@ export function getDiagnosticsFromTree(tree: Parser.Tree, queries: MetaModelicaQ
   }
 
   // Inform about silenced outputs (`_ := expr`)
-  const { silenced: silencedOutputs, wildcardMatch: wildcardMatches } = getSilencedOutputs(tree.rootNode);
+  const {
+    silenced: silencedOutputs,
+    wildcardMatch: wildcardMatches,
+    deadSilencedAssign: deadSilencedAssigns,
+  } = getSilencedOutputs(tree.rootNode);
   for (const { wildNode, fix } of silencedOutputs) {
     const diagnostic = nodeToDiagnostic(
       wildNode,
@@ -523,6 +1079,47 @@ export function getDiagnosticsFromTree(tree: Parser.Tree, queries: MetaModelicaQ
       LSP.DiagnosticSeverity.Information,
       `Replace '_ :=' with '() :=' before match/matchcontinue to ensure output of match/matchcontinue isn't ignored by accident.`);
     (diagnostic as LSP.Diagnostic & { data: unknown }).data = { wildcardMatchFix: fix };
+    diagnostics.push(diagnostic);
+  }
+  for (const { wildNode, fix } of deadSilencedAssigns) {
+    const diagnostic = nodeToDiagnostic(
+      wildNode,
+      LSP.DiagnosticSeverity.Information,
+      `'_ := expr;' has no effect when the right-hand side is a bare value or variable; remove the whole statement.`);
+    (diagnostic as LSP.Diagnostic & { data: unknown }).data = { deadSilencedAssignFix: fix };
+    diagnostics.push(diagnostic);
+  }
+
+  // Inform about redundant single-element parens
+  const redundantParens = getRedundantParens(tree.rootNode);
+  for (const { node, fix } of redundantParens) {
+    const diagnostic = nodeToDiagnostic(
+      node,
+      LSP.DiagnosticSeverity.Information,
+      `Redundant parentheses around single expression.`);
+    (diagnostic as LSP.Diagnostic & { data: unknown }).data = { redundantParensFix: fix };
+    diagnostics.push(diagnostic);
+  }
+
+  // Inform about all-wildcard tuple patterns `(_, _, _)` that collapse to `_`.
+  const wildcardTuples = getWildcardTuples(tree.rootNode);
+  for (const { node, fix } of wildcardTuples) {
+    const diagnostic = nodeToDiagnostic(
+      node,
+      LSP.DiagnosticSeverity.Information,
+      `All-wildcard tuple pattern is equivalent to '_'.`);
+    (diagnostic as LSP.Diagnostic & { data: unknown }).data = { wildcardTupleFix: fix };
+    diagnostics.push(diagnostic);
+  }
+
+  // Inform about case-pattern bindings that are never used in the case body.
+  const unusedCaseBindings = getUnusedCaseBindings(tree.rootNode);
+  for (const { identNode, fix } of unusedCaseBindings) {
+    const diagnostic = nodeToDiagnostic(
+      identNode,
+      LSP.DiagnosticSeverity.Information,
+      `Unused case binding '${identNode.text}': replace with '_'.`);
+    (diagnostic as LSP.Diagnostic & { data: unknown }).data = { unusedCaseBindingFix: fix };
     diagnostics.push(diagnostic);
   }
 

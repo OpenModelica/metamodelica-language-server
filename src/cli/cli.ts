@@ -34,22 +34,54 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import { Worker, isMainThread, parentPort } from 'worker_threads';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as LSP from 'vscode-languageserver/node';
 
 import { initializeMetaModelicaParser } from '../server/metaModelicaParser';
 import Analyzer from '../server/analyzer';
-import { UnusedArgFix, UnusedVarFix, SilencedOutputFix, WildcardMatchFix } from '../server/diagnostics';
+import {
+  DeadSilencedAssignFix, RedundantParensFix, SilencedOutputFix, UnusedArgFix,
+  UnusedCaseBindingFix, UnusedVarFix, WildcardMatchFix, WildcardTupleFix,
+} from '../server/diagnostics';
 
-export type CheckName = 'unused-var' | 'unused-match-arg' | 'unused-silenced-output' | 'wildcard-match';
+export type CheckName =
+  | 'unused-var' | 'unused-match-arg' | 'unused-case-binding'
+  | 'unused-silenced-output' | 'wildcard-match' | 'dead-silenced-assign'
+  | 'redundant-parens' | 'wildcard-tuple';
 
-export const ALL_CHECKS: CheckName[] = ['unused-var', 'unused-match-arg', 'unused-silenced-output', 'wildcard-match'];
+export const ALL_CHECKS: CheckName[] = [
+  'unused-var', 'unused-match-arg', 'unused-case-binding',
+  'unused-silenced-output', 'wildcard-match', 'dead-silenced-assign',
+  'redundant-parens', 'wildcard-tuple',
+];
+
+type FixData = {
+  unusedArgFix?: UnusedArgFix;
+  unusedVarFix?: UnusedVarFix;
+  unusedCaseBindingFix?: UnusedCaseBindingFix;
+  silencedOutputFix?: SilencedOutputFix;
+  wildcardMatchFix?: WildcardMatchFix;
+  deadSilencedAssignFix?: DeadSilencedAssignFix;
+  redundantParensFix?: RedundantParensFix;
+  wildcardTupleFix?: WildcardTupleFix;
+};
 
 export interface ProcessResult {
   filesProcessed: number;
   issuesFound: number;
   issuesFixed: number;
+}
+
+interface FileResult {
+  found: number;
+  fixed: number;
+  // Lines to emit on stdout (per-file diagnostics, "fixed N issues" summary).
+  out: string[];
+  // Lines to emit on stderr (self-overlap warnings).
+  err: string[];
 }
 
 /**
@@ -92,15 +124,211 @@ function applyEdits(content: string, uri: string, edits: LSP.TextEdit[]): string
  * checks, or undefined if it should be skipped.
  */
 function getFixEdits(
-  data: { unusedArgFix?: UnusedArgFix; unusedVarFix?: UnusedVarFix; silencedOutputFix?: SilencedOutputFix; wildcardMatchFix?: WildcardMatchFix } | undefined,
+  data: FixData | undefined,
   checks: Set<CheckName>,
 ): LSP.TextEdit[] | undefined {
   if (!data) { return undefined; }
   if (checks.has('unused-match-arg') && data.unusedArgFix) { return data.unusedArgFix.edits; }
   if (checks.has('unused-var') && data.unusedVarFix) { return data.unusedVarFix.edits; }
+  if (checks.has('unused-case-binding') && data.unusedCaseBindingFix) { return data.unusedCaseBindingFix.edits; }
   if (checks.has('unused-silenced-output') && data.silencedOutputFix) { return data.silencedOutputFix.edits; }
   if (checks.has('wildcard-match') && data.wildcardMatchFix) { return data.wildcardMatchFix.edits; }
+  if (checks.has('dead-silenced-assign') && data.deadSilencedAssignFix) { return data.deadSilencedAssignFix.edits; }
+  if (checks.has('redundant-parens') && data.redundantParensFix) { return data.redundantParensFix.edits; }
+  if (checks.has('wildcard-tuple') && data.wildcardTupleFix) { return data.wildcardTupleFix.edits; }
   return undefined;
+}
+
+/**
+ * Process one file: detect issues and optionally apply quick-fixes in-place.
+ * Returns counts and the log lines that would have been emitted, without
+ * actually printing anything — callers collect and print so output stays
+ * grouped per-file even when files are processed in parallel.
+ */
+async function processOneFile(
+  filePath: string,
+  fix: boolean,
+  checks: Set<CheckName>,
+): Promise<FileResult> {
+  const result: FileResult = { found: 0, fixed: 0, out: [], err: [] };
+
+  // Re-create the parser per file. Tree-sitter's wasm heap can grow but
+  // never shrinks; on very large files (with hundreds of fixes) it would
+  // eventually abort with 'Aborted()'. A fresh parser per file resets the
+  // heap and keeps memory bounded regardless of total batch size.
+  const parser = await initializeMetaModelicaParser();
+  try {
+    const analyzer = new Analyzer(parser);
+    const absPath = path.resolve(filePath);
+    const uri = `file://${absPath}`;
+    let content = fs.readFileSync(absPath, 'utf-8');
+
+    if (fix) {
+      // Collect all non-overlapping fixes from each pass and apply them in
+      // one go. One pass per round of fixes (not one parse per fix), which
+      // keeps the wasm parser from drowning in leaked trees on large files.
+      let fixed = 0;
+      let hasMore = true;
+      while (hasMore) {
+        hasMore = false;
+        const doc = TextDocument.create(uri, 'metamodelica', 1, content);
+        const diagnostics = analyzer.analyze(doc);
+
+        // Greedily accept every fix whose edits don't overlap an already-
+        // accepted edit (sorted by start offset). Cascading fixes (e.g. a
+        // parens removal that uncovers another) are picked up on the next
+        // pass.
+        const accepted: LSP.TextEdit[] = [];
+        const occupied: { start: number; end: number }[] = [];
+        const offset = (pos: LSP.Position): number => doc.offsetAt(pos);
+        const overlapsAny = (s: { start: number; end: number }, xs: { start: number; end: number }[]): boolean =>
+          xs.some(o => s.start < o.end && o.start < s.end);
+        for (const diagnostic of diagnostics) {
+          const data = diagnostic.data as FixData | undefined;
+          const edits = getFixEdits(data, checks);
+          if (!edits || edits.length === 0) { continue; }
+          const spans = edits.map(e => ({ start: offset(e.range.start), end: offset(e.range.end) }));
+          // Reject the whole fix if any of its edits overlap an already-
+          // accepted edit OR another edit from this same fix. The latter
+          // means the detector emitted a self-overlapping edit list —
+          // skip rather than crashing applyEdits.
+          if (spans.some(s => overlapsAny(s, occupied))) { continue; }
+          let selfOverlap = false;
+          for (let i = 0; i < spans.length && !selfOverlap; i++) {
+            for (let j = i + 1; j < spans.length; j++) {
+              const a = spans[i], b = spans[j];
+              if (a.start < b.end && b.start < a.end) { selfOverlap = true; break; }
+            }
+          }
+          if (selfOverlap) {
+            result.err.push(`${filePath}: skipping self-overlapping fix from "${diagnostic.message}"`);
+            continue;
+          }
+          accepted.push(...edits);
+          occupied.push(...spans);
+          fixed++;
+        }
+
+        if (accepted.length > 0) {
+          try {
+            content = applyEdits(content, uri, accepted);
+          } catch (err) {
+            // Most commonly "Overlapping edit" from TextDocument.applyEdits.
+            // Re-throw with the file path and the accepted edit ranges so a
+            // multi-file batch run is actually diagnosable.
+            const msg = err instanceof Error ? err.message : String(err);
+            const ranges = accepted.map(e =>
+              `[${e.range.start.line + 1}:${e.range.start.character + 1}` +
+              `-${e.range.end.line + 1}:${e.range.end.character + 1}]`,
+            ).join(', ');
+            throw new Error(`${filePath}: applyEdits failed (${msg}). Accepted edits: ${ranges}`);
+          }
+          hasMore = true;
+        }
+      }
+      if (fixed > 0) {
+        fs.writeFileSync(absPath, content);
+        result.out.push(`${filePath}: fixed ${fixed} issue(s)`);
+      }
+      result.fixed = fixed;
+    } else {
+      const doc = TextDocument.create(uri, 'metamodelica', 1, content);
+      const diagnostics = analyzer.analyze(doc);
+      let count = 0;
+      for (const diagnostic of diagnostics) {
+        const data = diagnostic.data as FixData | undefined;
+        if (getFixEdits(data, checks)) {
+          const { line, character } = diagnostic.range.start;
+          result.out.push(`${filePath}:${line + 1}:${character + 1}: ${diagnostic.message}`);
+          count++;
+        }
+      }
+      result.found = count;
+    }
+  } finally {
+    parser.delete();
+  }
+
+  return result;
+}
+
+function flushFileResult(r: FileResult): void {
+  for (const line of r.out) { console.log(line); }
+  for (const line of r.err) { console.error(line); }
+}
+
+/**
+ * Run `processOneFile` across `files` using up to `jobs` worker threads.
+ * Falls back to in-process sequential execution when `jobs <= 1`.
+ */
+async function runParallel(
+  files: string[],
+  fix: boolean,
+  checks: Set<CheckName>,
+  jobs: number,
+): Promise<ProcessResult> {
+  let totalFound = 0;
+  let totalFixed = 0;
+
+  if (jobs <= 1 || files.length <= 1) {
+    for (const filePath of files) {
+      const r = await processOneFile(filePath, fix, checks);
+      flushFileResult(r);
+      totalFound += r.found;
+      totalFixed += r.fixed;
+    }
+    return { filesProcessed: files.length, issuesFound: totalFound, issuesFixed: totalFixed };
+  }
+
+  const checksArr = Array.from(checks);
+  const workerCount = Math.min(jobs, files.length);
+  let cursor = 0;
+  let firstError: Error | null = null;
+
+  await new Promise<void>((resolve) => {
+    let active = 0;
+
+    const dispatch = (worker: Worker): void => {
+      if (firstError || cursor >= files.length) {
+        worker.postMessage({ type: 'exit' });
+        return;
+      }
+      const filePath = files[cursor++];
+      worker.postMessage({ type: 'file', filePath, fix, checks: checksArr });
+    };
+
+    const onExitOrError = (worker: Worker): void => {
+      active--;
+      // Stop workers when the queue is drained AND no more in flight.
+      if (active === 0) { resolve(); }
+    };
+
+    for (let i = 0; i < workerCount; i++) {
+      const worker = new Worker(__filename);
+      active++;
+      worker.on('message', (msg: { result?: FileResult; error?: string }) => {
+        if (msg.error) {
+          if (!firstError) { firstError = new Error(msg.error); }
+        } else if (msg.result) {
+          flushFileResult(msg.result);
+          totalFound += msg.result.found;
+          totalFixed += msg.result.fixed;
+        }
+        dispatch(worker);
+      });
+      worker.on('error', (err: unknown) => {
+        if (!firstError) {
+          firstError = err instanceof Error ? err : new Error(String(err));
+        }
+        worker.postMessage({ type: 'exit' });
+      });
+      worker.on('exit', () => onExitOrError(worker));
+      dispatch(worker);
+    }
+  });
+
+  if (firstError) { throw firstError; }
+  return { filesProcessed: files.length, issuesFound: totalFound, issuesFixed: totalFixed };
 }
 
 /**
@@ -110,74 +338,39 @@ function getFixEdits(
  * @param paths   File or directory paths to process.
  * @param fix     When true, apply quick-fixes and save files. When false, only report.
  * @param checks  Which checks to run/fix. Defaults to all checks.
+ * @param jobs    Worker-thread parallelism. Defaults to 1 (in-process).
  * @returns       Summary of what was found and fixed.
  */
 export async function processFiles(
   paths: string[],
   fix: boolean,
   checks: Set<CheckName> = new Set(ALL_CHECKS),
+  jobs = 1,
 ): Promise<ProcessResult> {
-  const parser = await initializeMetaModelicaParser();
-  const analyzer = new Analyzer(parser);
-
   const moFiles: string[] = [];
   for (const p of paths) {
     moFiles.push(...findMoFiles(p));
   }
+  return runParallel(moFiles, fix, checks, jobs);
+}
 
-  let totalIssuesFound = 0;
-  let totalIssuesFixed = 0;
+type WorkerInMessage =
+  | { type: 'file'; filePath: string; fix: boolean; checks: CheckName[] }
+  | { type: 'exit' };
 
-  for (const filePath of moFiles) {
-    const absPath = path.resolve(filePath);
-    const uri = `file://${absPath}`;
-    let content = fs.readFileSync(absPath, 'utf-8');
-
-    if (fix) {
-      // Apply fixes one at a time, re-parsing after each (positions shift after edits).
-      let fixed = 0;
-      let hasMore = true;
-      while (hasMore) {
-        hasMore = false;
-        const doc = TextDocument.create(uri, 'metamodelica', 1, content);
-        const diagnostics = analyzer.analyze(doc);
-        for (const diagnostic of diagnostics) {
-          const data = diagnostic.data as { unusedArgFix?: UnusedArgFix; unusedVarFix?: UnusedVarFix; silencedOutputFix?: SilencedOutputFix; wildcardMatchFix?: WildcardMatchFix } | undefined;
-          const edits = getFixEdits(data, checks);
-          if (edits) {
-            content = applyEdits(content, uri, edits);
-            fixed++;
-            hasMore = true;
-            break; // restart scan; positions are now stale
-          }
-        }
-      }
-      if (fixed > 0) {
-        fs.writeFileSync(absPath, content);
-        console.log(`${filePath}: fixed ${fixed} issue(s)`);
-      }
-      totalIssuesFixed += fixed;
-    } else {
-      const doc = TextDocument.create(uri, 'metamodelica', 1, content);
-      const diagnostics = analyzer.analyze(doc);
-      let count = 0;
-      for (const diagnostic of diagnostics) {
-        const data = diagnostic.data as { unusedArgFix?: UnusedArgFix; unusedVarFix?: UnusedVarFix; silencedOutputFix?: SilencedOutputFix; wildcardMatchFix?: WildcardMatchFix } | undefined;
-        if (getFixEdits(data, checks)) {
-          const { line, character } = diagnostic.range.start;
-          console.log(`${filePath}:${line + 1}:${character + 1}: ${diagnostic.message}`);
-          count++;
-        }
-      }
-      totalIssuesFound += count;
+function runWorker(port: NonNullable<typeof parentPort>): void {
+  port.on('message', async (msg: WorkerInMessage) => {
+    if (msg.type === 'exit') {
+      port.close();
+      return;
     }
-  }
-
-  return {
-    filesProcessed: moFiles.length,
-    issuesFound: totalIssuesFound,
-    issuesFixed: totalIssuesFixed,
-  };
+    try {
+      const result = await processOneFile(msg.filePath, msg.fix, new Set(msg.checks));
+      port.postMessage({ result });
+    } catch (err) {
+      port.postMessage({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
 }
 
 async function main(): Promise<void> {
@@ -185,15 +378,21 @@ async function main(): Promise<void> {
 
   if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
     console.log(
-      'Usage: mmlsc [--fix] [--check <name>]... <paths...>\n\n' +
+      'Usage: mmlsc [--fix] [--check <name>]... [--jobs N] <paths...>\n\n' +
       '  --fix            Apply quick-fixes to files in-place (default: report only)\n' +
       '  --check <name>   Limit to a specific check (repeatable; default: all checks)\n' +
+      '  --jobs N         Process files in parallel using N worker threads\n' +
+      '                   (default: number of CPU cores; pass 1 to disable)\n' +
       '  --help           Show this help\n\n' +
       '  Available check names:\n' +
       '    unused-var              Unused protected/local variables\n' +
       '    unused-match-arg        Unused match/matchcontinue arguments\n' +
+      '    unused-case-binding     Unused case-pattern bindings (replace identifier with `_`)\n' +
       '    unused-silenced-output  Unnecessary output silencing (\'_ := expr\')\n' +
-      '    wildcard-match          Wildcard before match/matchcontinue (\'_ :=\' → \'() :=\')\n\n' +
+      '    wildcard-match          Wildcard before match/matchcontinue (\'_ :=\' → \'() :=\')\n' +
+      '    dead-silenced-assign    Drop entire `_ := variable;` (RHS has no side-effect)\n' +
+      '    redundant-parens        Redundant single-element parens (match/case/assignment LHS)\n' +
+      '    wildcard-tuple          All-wildcard case pattern `(_, _, _)` reducible to `_`\n\n' +
       '  paths    Files or directories to process (.mo files, directories are scanned recursively)'
     );
     process.exit(0);
@@ -201,8 +400,9 @@ async function main(): Promise<void> {
 
   const fix = args.includes('--fix');
 
-  // Collect --check <name> pairs
+  // Collect --check <name> and --jobs N pairs
   const requestedChecks: CheckName[] = [];
+  let jobs: number | undefined;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--check') {
       const name = args[i + 1];
@@ -216,6 +416,15 @@ async function main(): Promise<void> {
       }
       requestedChecks.push(name as CheckName);
       i++; // skip the name argument
+    } else if (args[i] === '--jobs') {
+      const value = args[i + 1];
+      const n = value ? Number.parseInt(value, 10) : NaN;
+      if (!Number.isFinite(n) || n < 1) {
+        console.error('Error: --jobs requires a positive integer');
+        process.exit(2);
+      }
+      jobs = n;
+      i++;
     }
   }
 
@@ -223,12 +432,16 @@ async function main(): Promise<void> {
     ? new Set(requestedChecks)
     : new Set(ALL_CHECKS);
 
-  const paths = args.filter((a, i) =>
-    !a.startsWith('--') && (i === 0 || args[i - 1] !== '--check')
-  );
+  const paths = args.filter((a, i) => {
+    if (a.startsWith('--')) { return false; }
+    const prev = args[i - 1];
+    return prev !== '--check' && prev !== '--jobs';
+  });
+
+  const jobsCount = jobs ?? os.cpus().length;
 
   try {
-    const result = await processFiles(paths, fix, checks);
+    const result = await processFiles(paths, fix, checks, jobsCount);
 
     if (fix) {
       console.log(`Processed ${result.filesProcessed} file(s), fixed ${result.issuesFixed} issue(s).`);
@@ -243,7 +456,11 @@ async function main(): Promise<void> {
   }
 }
 
-// Only run main() when executed directly (not when imported by tests).
-if (require.main === module) {
-  main();
+if (isMainThread) {
+  // Only run main() when executed directly (not when imported by tests).
+  if (require.main === module) {
+    main();
+  }
+} else if (parentPort) {
+  runWorker(parentPort);
 }

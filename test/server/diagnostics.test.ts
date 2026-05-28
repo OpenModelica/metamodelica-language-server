@@ -217,16 +217,17 @@ end foo;
 suite('getAllDeclarationsInTree', () => {
   test('Definitions and types', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(metaModelicaTestString)!;
+    const tree = parser.parse(metaModelicaTestString)!!!;
     const queries = new MetaModelicaQueries(parser.language!);
-    const diagnostics = getDiagnosticsFromTree(tree, queries);
+    const diagnostics = getDiagnosticsFromTree(tree, queries)
+      .filter(d => !d.message.startsWith('Redundant parentheses'));
 
     assert.deepEqual(diagnostics, expectedDiagnostics);
   });
 
   test('Detects unused match argument', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(unusedMatchArgString)!;
+    const tree = parser.parse(unusedMatchArgString)!!!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
@@ -249,7 +250,7 @@ suite('getAllDeclarationsInTree', () => {
 
   test('Does not report when all match arguments are used', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(usedMatchArgString)!;
+    const tree = parser.parse(usedMatchArgString)!!!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
@@ -286,7 +287,7 @@ end addOne;
 
   test('Detects unused protected variable', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(unusedProtectedVarString)!;
+    const tree = parser.parse(unusedProtectedVarString)!!!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
@@ -305,7 +306,7 @@ end addOne;
 
   test('Does not report used protected variables', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(usedProtectedVarString)!;
+    const tree = parser.parse(usedProtectedVarString)!!!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
@@ -346,7 +347,7 @@ end foo;
 
   test('Detects unused local variable in match', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(unusedLocalVarString)!;
+    const tree = parser.parse(unusedLocalVarString)!!!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
@@ -362,7 +363,7 @@ end foo;
 
   test('Detects unused variable in comma-separated local declaration', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(unusedLocalMultiDeclString)!;
+    const tree = parser.parse(unusedLocalMultiDeclString)!!!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
@@ -377,9 +378,124 @@ end foo;
     assert.strictEqual(d.data.unusedVarFix.edits[0].newText, '');
   });
 
+  // ── Unused case-pattern bindings ───────────────────────────────────────
+
+  const unusedCaseBindingString = `
+function foo
+  input Integer a;
+  input Integer b;
+  output Integer r;
+algorithm
+  r := match (a, b)
+    local Integer x, i, y;
+    case (x, i) then x;
+    case (1, y) equation y = 2; then y;
+    case (x, x) then x;
+    case (_, _) then 0;
+  end match;
+end foo;
+`;
+
+  test('Detects unused case-pattern binding', async () => {
+    const parser = await initializeMetaModelicaParser();
+    const tree = parser.parse(unusedCaseBindingString)!!;
+    const queries = new MetaModelicaQueries(parser.language!);
+    const diagnostics = getDiagnosticsFromTree(tree, queries);
+
+    const unused = diagnostics.filter(d => d.message.startsWith('Unused case binding'));
+    assert.strictEqual(unused.length, 1, 'Exactly one unused case binding expected');
+
+    const d = unused[0] as LSP.Diagnostic & {
+      data: { unusedCaseBindingFix: { bindName: string; edits: LSP.TextEdit[] } }
+    };
+    assert.strictEqual(d.message, "Unused case binding 'i': replace with '_'.");
+    assert.strictEqual(d.severity, LSP.DiagnosticSeverity.Information);
+    assert.strictEqual(d.data.unusedCaseBindingFix.bindName, 'i');
+    assert.strictEqual(d.data.unusedCaseBindingFix.edits.length, 1);
+    assert.strictEqual(d.data.unusedCaseBindingFix.edits[0].newText, '_');
+  });
+
+  const multiProtectedSectionString = `
+function f
+  input Real x;
+  output Real y;
+protected
+  Real unused;
+protected
+  Real used;
+algorithm
+  used := x;
+  y := used;
+end f;
+`;
+
+  test('Removes orphan section header when dropping sole element of a protected section', async () => {
+    const parser = await initializeMetaModelicaParser();
+    const tree = parser.parse(multiProtectedSectionString)!;
+    const queries = new MetaModelicaQueries(parser.language!);
+    const diagnostics = getDiagnosticsFromTree(tree, queries);
+
+    const unused = diagnostics.filter(d => d.message.startsWith('Unused variable'));
+    assert.strictEqual(unused.length, 1);
+
+    const d = unused[0] as LSP.Diagnostic & { data: { unusedVarFix: { edits: LSP.TextEdit[] } } };
+    // Two edits: one for the stranded `protected` header, one for the element.
+    assert.strictEqual(d.data.unusedVarFix.edits.length, 2,
+      'Sole element + section header should produce two delete edits');
+  });
+
+  const packageConstantsString = `
+package P
+protected constant DAE.Type T_REAL_ARRAY_DEFAULT   = DAE.T_ARRAY(DAE.T_REAL_DEFAULT, {DAE.DIM_UNKNOWN()});
+protected constant DAE.Type T_REAL_ARRAY_1_DEFAULT = DAE.T_ARRAY(DAE.T_REAL_DEFAULT, {DAE.DIM_INTEGER(1)});
+protected constant DAE.Type T_INT_ARRAY_1_DEFAULT  = DAE.T_ARRAY(DAE.T_INTEGER_DEFAULT, {DAE.DIM_INTEGER(1)});
+end P;
+`;
+
+  test('Does not flag package-level protected constants as unused', async () => {
+    const parser = await initializeMetaModelicaParser();
+    const tree = parser.parse(packageConstantsString)!;
+    const queries = new MetaModelicaQueries(parser.language!);
+    const diagnostics = getDiagnosticsFromTree(tree, queries);
+
+    const unused = diagnostics.filter(d => d.message.startsWith('Unused variable'));
+    assert.strictEqual(unused.length, 0,
+      "Package-level protected constants may be referenced from other files");
+  });
+
+  const caseBindingUsedAfterMatchString = `
+function foo
+  input list<DAE.Properties> inProperties;
+  output list<DAE.Type> outTypes;
+protected
+  DAE.Const c;
+  DAE.TupleConst tc;
+  DAE.Type ty;
+algorithm
+  for prop in listReverse(inProperties) loop
+    tc := match prop
+      case DAE.PROP(type_ = ty, constFlag = c) then DAE.SINGLE_CONST(c);
+      case DAE.PROP_TUPLE(type_ = ty, tupleConst = tc) then tc;
+    end match;
+    outTypes := ty :: outTypes;
+  end for;
+end foo;
+`;
+
+  test('Does not flag case binding read outside the match', async () => {
+    const parser = await initializeMetaModelicaParser();
+    const tree = parser.parse(caseBindingUsedAfterMatchString)!;
+    const queries = new MetaModelicaQueries(parser.language!);
+    const diagnostics = getDiagnosticsFromTree(tree, queries);
+
+    const unused = diagnostics.filter(d => d.message.startsWith('Unused case binding'));
+    assert.strictEqual(unused.length, 0,
+      "`ty` is read after `end match` so the pattern binding must not be flagged");
+  });
+
   test('Does not flag function-call arguments (only plain identifiers)', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(complexArgMatchString)!;
+    const tree = parser.parse(complexArgMatchString)!!!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
@@ -421,7 +537,7 @@ end addOne;
 
   test('Detects silenced output (_ := expr)', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(silencedOutputString)!;
+    const tree = parser.parse(silencedOutputString)!!!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
@@ -445,7 +561,7 @@ end addOne;
 
   test('Does not flag regular assignments', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(noSilencedOutputString)!;
+    const tree = parser.parse(noSilencedOutputString)!!!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 

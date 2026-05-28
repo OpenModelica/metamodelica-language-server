@@ -48,7 +48,7 @@ const unusedArgSource = `function foo
 algorithm
   res := match (a, b, fns)
     case (1, 2, _) then true;
-    case (_, _, _) then false;
+    case (3, 4, _) then false;
   end match;
 end foo;
 `;
@@ -62,7 +62,7 @@ const unusedArgFixed = `function foo
 algorithm
   res := match (a, b)
     case (1, 2) then true;
-    case (_, _) then false;
+    case (3, 4) then false;
   end match;
 end foo;
 `;
@@ -94,9 +94,9 @@ const noIssueSource = `function bar
   input Integer a;
   output Boolean res;
 algorithm
-  res := match (a)
-    case (1) then true;
-    case (_) then false;
+  res := match a
+    case 1 then true;
+    case _ then false;
   end match;
 end bar;
 `;
@@ -137,6 +137,43 @@ suite('CLI processFiles', () => {
 
     const fixed = fs.readFileSync(filePath, 'utf-8');
     assert.strictEqual(fixed, unusedArgFixed);
+  });
+
+  test('fixes 2-element match tuple without producing invalid syntax', async () => {
+    // Regression: when removing one of two match arguments the parens used to
+    // be dropped, producing `matchinDefs` instead of `match (inDefs)`.
+    const src = `function foo
+  input Integer a;
+  input Integer b;
+  output Integer res;
+algorithm
+  res := match (a, b)
+    case (_, 1) then 1;
+    case (_, _) then 0;
+  end match;
+end foo;
+`;
+    const expected = `function foo
+  input Integer a;
+  input Integer b;
+  output Integer res;
+algorithm
+  res := match (b)
+    case (1) then 1;
+    case (_) then 0;
+  end match;
+end foo;
+`;
+    const filePath = path.join(tmpDir, 'two_arg.mo');
+    fs.writeFileSync(filePath, src);
+
+    // Limit to the match-arg check so the redundant-parens fix doesn't
+    // cascade onto the resulting single-element tuple — this test is
+    // specifically about not producing `matchinDefs`.
+    const result = await processFiles([filePath], true, new Set(['unused-match-arg']));
+
+    assert.strictEqual(result.issuesFixed, 1);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), expected);
   });
 
   test('reports zero issues for a clean file', async () => {
@@ -213,7 +250,7 @@ protected
 algorithm
   res := match (a, unused_arg)
     case (1, _) then 1;
-    case (_, _) then 0;
+    case (2, _) then 0;
   end match;
 end foo;
 `;
@@ -244,6 +281,171 @@ end foo;
 
     assert.strictEqual(result.issuesFound, 2, 'Both issue types should be reported');
   });
+
+  // ── redundant-parens check ─────────────────────────────────────────────
+
+  test('removes redundant parens in match input, case pattern, and assignment LHS', async () => {
+    const src = `function foo
+  input Integer x;
+  output Integer y;
+algorithm
+  (y) := match (x)
+    case (1) then 1;
+    case (_) then 0;
+  end match;
+end foo;
+`;
+    const expected = `function foo
+  input Integer x;
+  output Integer y;
+algorithm
+  y := match x
+    case 1 then 1;
+    case _ then 0;
+  end match;
+end foo;
+`;
+    const filePath = path.join(tmpDir, 'parens.mo');
+    fs.writeFileSync(filePath, src);
+
+    const result = await processFiles([filePath], true, new Set(['redundant-parens']));
+
+    assert.strictEqual(result.issuesFixed, 4);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), expected);
+  });
+
+  test('redundant-parens fix inserts a space when keyword has no whitespace', async () => {
+    // The keyword `match` is glued to the LPAR; dropping the parens must
+    // keep `match` and `x` separated.
+    const src = `function foo
+  input Integer x;
+  output Integer y;
+algorithm
+  y := match(x)
+    case 1 then 1;
+    case _ then 0;
+  end match;
+end foo;
+`;
+    const filePath = path.join(tmpDir, 'parens_nospace.mo');
+    fs.writeFileSync(filePath, src);
+
+    await processFiles([filePath], true, new Set(['redundant-parens']));
+
+    const out = fs.readFileSync(filePath, 'utf-8');
+    assert.ok(out.includes('match x'), `expected 'match x' in output, got:\n${out}`);
+    assert.ok(!out.includes('matchx'), `should not produce 'matchx', got:\n${out}`);
+  });
+
+  // ── wildcard-tuple check ───────────────────────────────────────────────
+
+  test('collapses nested all-wildcard tuple but leaves top-level case pattern alone', async () => {
+    // The inner `(_, _)` is nested inside an outer tuple pattern, so it
+    // should collapse to `_`. The outer `(_, _)` *is* a top-level case
+    // pattern — that one must be left alone (the unused-match-arg check
+    // handles top-level redundancy).
+    const src = `function foo
+  input Integer a;
+  input Pair b;
+  output Integer r;
+algorithm
+  r := match (a, b)
+    case (1, _) then 1;
+    case (_, PAIR((_, _), x)) then x;
+    case (_, _) then 0;
+  end match;
+end foo;
+`;
+    const filePath = path.join(tmpDir, 'wild_tuple.mo');
+    fs.writeFileSync(filePath, src);
+
+    const result = await processFiles([filePath], true, new Set(['wildcard-tuple']));
+
+    assert.strictEqual(result.issuesFixed, 1, 'only the inner tuple should be collapsed');
+    const out = fs.readFileSync(filePath, 'utf-8');
+    assert.ok(out.includes('PAIR(_, x)'), `inner (_, _) should become _, got:\n${out}`);
+    assert.ok(out.includes('case (_, _) then 0'), 'top-level (_, _) must be untouched');
+  });
+
+  test('redundant-parens does not strip parens that wrap only part of a cons', async () => {
+    // Regression: `((r as X())::rest)` was being rewritten to `r as X()`,
+    // dropping `::rest` — because the inner `(r as X())` was matched as a
+    // single-element parens even though the parens only wrap the head of
+    // the cons, not the whole simple_expression. The outer parens *are*
+    // safe to remove, but the inner ones must be left alone.
+    const src = `function f
+  input list<R> xs;
+  output Integer n;
+algorithm
+  n := match xs
+    case ((r as BACKEND_RULE())::rest) then 1;
+    case _ then 0;
+  end match;
+end f;
+`;
+    const filePath = path.join(tmpDir, 'cons_as.mo');
+    fs.writeFileSync(filePath, src);
+
+    await processFiles([filePath], true, new Set(['redundant-parens']));
+
+    const out = fs.readFileSync(filePath, 'utf-8');
+    assert.ok(
+      out.includes('(r as BACKEND_RULE())::rest'),
+      `inner cons must survive intact, got:\n${out}`,
+    );
+  });
+
+  test('does not collapse `(_::rest, _)` — first element is not a wildcard', async () => {
+    // Regression: `_::rest` is a cons pattern, not a wildcard. The whole
+    // tuple is not all-wildcard and must not be replaced.
+    const src = `function foo
+  input list<Integer> xs;
+  input Integer y;
+  output Integer r;
+algorithm
+  r := match (xs, y)
+    case (_::rest, _) then listLength(rest);
+    case (_, _) then 0;
+  end match;
+end foo;
+`;
+    const filePath = path.join(tmpDir, 'cons.mo');
+    fs.writeFileSync(filePath, src);
+
+    const result = await processFiles([filePath], true, new Set(['wildcard-tuple']));
+
+    assert.strictEqual(result.issuesFixed, 0);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), src);
+  });
+
+  test('unused-var fix does not nuke sibling declarations sharing a line', async () => {
+    // Regression: `Absyn.Exp e; Integer i;` are two separate `element`
+    // nodes on the same source line. Previously the whole line was
+    // removed when `e` was unused, taking `Integer i` with it — even
+    // though `i` is referenced from the match case pattern.
+    const src = `function foo
+  input Absyn.Exp inExp;
+  output Integer outI;
+algorithm
+  outI := matchcontinue inExp
+    local
+      Absyn.ComponentRef cr;
+      Absyn.Exp e; Integer i;
+    case Absyn.CREF(cr) then 0;
+    case Absyn.INTEGER(i) then i;
+  end matchcontinue;
+end foo;
+`;
+    const filePath = path.join(tmpDir, 'unused_sibling.mo');
+    fs.writeFileSync(filePath, src);
+
+    await processFiles([filePath], true, new Set(['unused-var']));
+
+    const out = fs.readFileSync(filePath, 'utf-8');
+    assert.ok(out.includes('Integer i;'), `Integer i must survive, got:\n${out}`);
+    assert.ok(!out.includes('Absyn.Exp e'), `Absyn.Exp e must be removed, got:\n${out}`);
+  });
+
 
   test('--check unused-var fix mode leaves match-arg issues untouched', async () => {
     const filePath = path.join(tmpDir, 'both.mo');
@@ -323,7 +525,7 @@ end binTreeintersection1;
   const wildcardMatchSource = `function testMatch
   input Integer x;
 algorithm
-  _ := match (x)
+  _ := match x
     case 1 then ();
     else ();
   end match;
@@ -333,7 +535,7 @@ end testMatch;
   const wildcardMatchFixed = `function testMatch
   input Integer x;
 algorithm
-  () := match (x)
+  () := match x
     case 1 then ();
     else ();
   end match;
@@ -379,5 +581,160 @@ end testMatch;
     const result = await processFiles([filePath], false, new Set(['unused-silenced-output']));
 
     assert.strictEqual(result.issuesFound, 0, 'Wildcard-match should not be reported under unused-silenced-output');
+  });
+
+  // ── dead-silenced-assign ──────────────────────────────────────────────
+
+  test('removes whole `_ := variable;` instead of stripping the LHS', async () => {
+    // Regression: stripping `_ :=` from `_ := eqIdx1;` left `eqIdx1;`,
+    // which isn't a valid MetaModelica statement. The whole statement must
+    // be dropped because a bare value reference has no observable effect.
+    const src = `function foo
+  input Integer eqIdx1;
+  input Integer eqIdx2;
+  output Integer eqIdxDel;
+algorithm
+  if intLe(1, 2) then eqIdxDel := eqIdx2; _ := eqIdx1; else eqIdxDel := eqIdx1; _ := eqIdx2; end if;
+end foo;
+`;
+    const expected = `function foo
+  input Integer eqIdx1;
+  input Integer eqIdx2;
+  output Integer eqIdxDel;
+algorithm
+  if intLe(1, 2) then eqIdxDel := eqIdx2; else eqIdxDel := eqIdx1; end if;
+end foo;
+`;
+    const filePath = path.join(tmpDir, 'dead_silenced.mo');
+    fs.writeFileSync(filePath, src);
+
+    const result = await processFiles([filePath], true, new Set(['dead-silenced-assign']));
+
+    assert.strictEqual(result.issuesFixed, 2);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), expected);
+  });
+
+  test('still strips `_ :=` when RHS is a function call', async () => {
+    // Function calls have observable effects, so dropping just `_ :=` is
+    // safe — verify the silenced-output path didn't regress when the
+    // dead-silenced-assign route was added.
+    const src = `function foo
+  input Integer x;
+algorithm
+  _ := sideEffect(x);
+end foo;
+`;
+    const expected = `function foo
+  input Integer x;
+algorithm
+  sideEffect(x);
+end foo;
+`;
+    const filePath = path.join(tmpDir, 'silenced_call.mo');
+    fs.writeFileSync(filePath, src);
+
+    const result = await processFiles([filePath], true, new Set(['unused-silenced-output']));
+
+    assert.strictEqual(result.issuesFixed, 1);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), expected);
+  });
+
+  test('does not suggest `() :=` rewrite when match returns a non-unit value', async () => {
+    // Regression: rewriting `_ := match ... case _ then 0; end match;` to
+    // `() := match ...` is a type error because the match returns an
+    // Integer, not a tuple. Only branches that produce `()`/`fail()` are
+    // safe to rewrite — anything else must be left alone.
+    const src = `function foo
+  input Integer x;
+  output Integer r;
+algorithm
+  _ := match x
+    case 1 algorithm r := 1; then 0;
+    case _ algorithm r := 2; then 0;
+  end match;
+end foo;
+`;
+    const filePath = path.join(tmpDir, 'mixed_match.mo');
+    fs.writeFileSync(filePath, src);
+
+    const result = await processFiles([filePath], true, new Set(['wildcard-match']));
+
+    assert.strictEqual(result.issuesFixed, 0);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), src);
+  });
+
+  test('does not suggest `() :=` when every match branch is `fail()`', async () => {
+    // `fail()` is polymorphic — it doesn't return — so a match made up
+    // entirely of `fail()` branches has no inferable return type of `()`,
+    // and rewriting `_ := match` to `() := match` would constrain a
+    // polymorphic match into a unit-typed one (or be ill-typed outright).
+    // At least one branch must be literally `()`.
+    const src = `function foo
+  input Integer x;
+algorithm
+  _ := match x
+    case 1 then fail();
+    else fail();
+  end match;
+end foo;
+`;
+    const filePath = path.join(tmpDir, 'all_fail.mo');
+    fs.writeFileSync(filePath, src);
+
+    const result = await processFiles([filePath], true, new Set(['wildcard-match']));
+
+    assert.strictEqual(result.issuesFixed, 0);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), src);
+  });
+
+  test('does not flag protected declarations inside `partial function`', async () => {
+    // Regression: `partial function` is a template — its protected vars
+    // (`Token tok;` below) exist for inheriting functions to reuse, so
+    // they're never "used" inside this file's parse tree and would
+    // otherwise be removed.
+    const src = `partial function partialParser
+  input list<Token> inTokens;
+  output JSON value;
+  output list<Token> tokens = inTokens;
+protected
+  Token tok;
+end partialParser;
+`;
+    const filePath = path.join(tmpDir, 'partial.mo');
+    fs.writeFileSync(filePath, src);
+
+    const result = await processFiles([filePath], true, new Set(['unused-var']));
+
+    assert.strictEqual(result.issuesFixed, 0);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), src);
+  });
+
+  test('removes sole element of single-line `protected Real x;` section', async () => {
+    // Regression: when `protected` and the element share a source line the
+    // section-header edit and the element edit overlapped on the space
+    // between them, crashing TextDocument.applyEdits with "Overlapping
+    // edit". The two edits must be merged into one in that layout.
+    const src = `function foo
+  input Real x;
+  output Real y;
+protected Real eachPrefix;
+algorithm
+  y := x;
+end foo;
+`;
+    const expected = `function foo
+  input Real x;
+  output Real y;
+algorithm
+  y := x;
+end foo;
+`;
+    const filePath = path.join(tmpDir, 'sameline_proto.mo');
+    fs.writeFileSync(filePath, src);
+
+    const result = await processFiles([filePath], true, new Set(['unused-var']));
+
+    assert.strictEqual(result.issuesFixed, 1);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), expected);
   });
 });

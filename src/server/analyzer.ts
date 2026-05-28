@@ -126,6 +126,10 @@ export default class Analyzer {
     const fileContent = document.getText();
     const uri = document.uri;
 
+    // Free the previously cached tree before parsing — tree-sitter trees
+    // live in wasm linear memory and a long-running fix loop will OOM
+    // otherwise.
+    this.uriToAnalyzedDocument[uri]?.tree.delete();
     const tree = this.parser.parse(fileContent)!;
     logger.debug(tree.rootNode.toString());
 

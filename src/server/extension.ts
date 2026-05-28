@@ -45,7 +45,10 @@ import { TextDocument} from 'vscode-languageserver-textdocument';
 import { initializeMetaModelicaParser } from './metaModelicaParser';
 import Analyzer from './analyzer';
 import { logger, setLogConnection, setLogLevel } from '../util/logger';
-import { UnusedArgFix, UnusedVarFix, SilencedOutputFix, WildcardMatchFix } from './diagnostics';
+import {
+  DeadSilencedAssignFix, RedundantParensFix, SilencedOutputFix, UnusedArgFix,
+  UnusedCaseBindingFix, UnusedVarFix, WildcardMatchFix, WildcardTupleFix,
+} from './diagnostics';
 
 /**
  * MetaModelicaServer collection all the important bits and bobs.
@@ -153,7 +156,16 @@ export class MetaModelicaServer {
   private onCodeAction(params: LSP.CodeActionParams): LSP.CodeAction[] {
     const actions: LSP.CodeAction[] = [];
     for (const diagnostic of params.context.diagnostics) {
-      const data = diagnostic.data as { unusedArgFix?: UnusedArgFix; unusedVarFix?: UnusedVarFix; silencedOutputFix?: SilencedOutputFix; wildcardMatchFix?: WildcardMatchFix } | undefined;
+      const data = diagnostic.data as {
+        unusedArgFix?: UnusedArgFix;
+        unusedVarFix?: UnusedVarFix;
+        unusedCaseBindingFix?: UnusedCaseBindingFix;
+        silencedOutputFix?: SilencedOutputFix;
+        wildcardMatchFix?: WildcardMatchFix;
+        deadSilencedAssignFix?: DeadSilencedAssignFix;
+        redundantParensFix?: RedundantParensFix;
+        wildcardTupleFix?: WildcardTupleFix;
+      } | undefined;
       if (data?.unusedArgFix) {
         const fix = data.unusedArgFix;
         actions.push({
@@ -182,6 +194,20 @@ export class MetaModelicaServer {
           }
         });
       }
+      if (data?.unusedCaseBindingFix) {
+        const fix = data.unusedCaseBindingFix;
+        actions.push({
+          title: `Replace unused case binding '${fix.bindName}' with '_'`,
+          kind: LSP.CodeActionKind.QuickFix,
+          diagnostics: [diagnostic],
+          isPreferred: true,
+          edit: {
+            changes: {
+              [params.textDocument.uri]: fix.edits
+            }
+          }
+        });
+      }
       if (data?.silencedOutputFix) {
         const fix = data.silencedOutputFix;
         actions.push({
@@ -200,6 +226,48 @@ export class MetaModelicaServer {
         const fix = data.wildcardMatchFix;
         actions.push({
           title: `Replace '_ :=' with '() :='`,
+          kind: LSP.CodeActionKind.QuickFix,
+          diagnostics: [diagnostic],
+          isPreferred: true,
+          edit: {
+            changes: {
+              [params.textDocument.uri]: fix.edits
+            }
+          }
+        });
+      }
+      if (data?.deadSilencedAssignFix) {
+        const fix = data.deadSilencedAssignFix;
+        actions.push({
+          title: `Remove dead '_ := …;' statement`,
+          kind: LSP.CodeActionKind.QuickFix,
+          diagnostics: [diagnostic],
+          isPreferred: true,
+          edit: {
+            changes: {
+              [params.textDocument.uri]: fix.edits
+            }
+          }
+        });
+      }
+      if (data?.redundantParensFix) {
+        const fix = data.redundantParensFix;
+        actions.push({
+          title: `Remove redundant parentheses`,
+          kind: LSP.CodeActionKind.QuickFix,
+          diagnostics: [diagnostic],
+          isPreferred: true,
+          edit: {
+            changes: {
+              [params.textDocument.uri]: fix.edits
+            }
+          }
+        });
+      }
+      if (data?.wildcardTupleFix) {
+        const fix = data.wildcardTupleFix;
+        actions.push({
+          title: `Collapse all-wildcard tuple to '_'`,
           kind: LSP.CodeActionKind.QuickFix,
           diagnostics: [diagnostic],
           isPreferred: true,
