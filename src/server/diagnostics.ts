@@ -356,15 +356,20 @@ function buildSectionHeaderRemoveEdit(
 }
 
 /**
- * Return true when `composition` belongs to a `function` class definition.
- * The grammar is composition → class_specifier → class_definition, where
- * `class_definition` has a `class_type` whose first token (FUNCTION,
- * PACKAGE, MODEL, RECORD, ...) names the class kind.
+ * Return true when `composition` belongs to a non-partial `function` class
+ * definition. The grammar is composition → class_specifier → class_definition,
+ * where `class_definition` has a `class_type` whose first token (FUNCTION,
+ * PACKAGE, MODEL, RECORD, ...) names the class kind, and an optional
+ * `PARTIAL` sibling for `partial function ... end f;` templates. A partial
+ * function has no body of its own — its protected declarations exist for
+ * inheriting functions to reuse — so flagging them as locally unused is
+ * unsound.
  */
 function isInsideFunction(composition: Parser.Node): boolean {
   let cur: Parser.Node | null = composition.parent;
   while (cur && cur.type !== 'class_definition') { cur = cur.parent; }
   if (!cur) { return false; }
+  if (cur.children.some(c => c.type === 'PARTIAL')) { return false; }
   const classType = cur.namedChildren.find(c => c.type === 'class_type');
   if (!classType) { return false; }
   return classType.children.some(c => c.type === 'FUNCTION');

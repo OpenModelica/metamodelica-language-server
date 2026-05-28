@@ -639,6 +639,28 @@ end foo;
     assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), expected);
   });
 
+  test('does not flag protected declarations inside `partial function`', async () => {
+    // Regression: `partial function` is a template — its protected vars
+    // (`Token tok;` below) exist for inheriting functions to reuse, so
+    // they're never "used" inside this file's parse tree and would
+    // otherwise be removed.
+    const src = `partial function partialParser
+  input list<Token> inTokens;
+  output JSON value;
+  output list<Token> tokens = inTokens;
+protected
+  Token tok;
+end partialParser;
+`;
+    const filePath = path.join(tmpDir, 'partial.mo');
+    fs.writeFileSync(filePath, src);
+
+    const result = await processFiles([filePath], true, new Set(['unused-var']));
+
+    assert.strictEqual(result.issuesFixed, 0);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), src);
+  });
+
   test('removes sole element of single-line `protected Real x;` section', async () => {
     // Regression: when `protected` and the element share a source line the
     // section-header edit and the element edit overlapped on the space
