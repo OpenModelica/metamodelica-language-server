@@ -570,19 +570,28 @@ function buildDeadSilencedAssignEdit(node: Parser.Node, source: string): LSP.Tex
 
 /**
  * Return true when every `then`/`else` branch of `matchExpr` produces `()`
- * (unit tuple) or `fail()`. Required before suggesting `_ := match` →
- * `() := match`: if any branch returns a real value the rewrite would
- * introduce a tuple-vs-scalar type error.
+ * (unit tuple) or `fail()`, AND at least one branch is literally `()`.
+ * Required before suggesting `_ := match` → `() := match`:
+ *   - If any branch returns a real value the rewrite would introduce a
+ *     tuple-vs-scalar type error.
+ *   - `fail()` is polymorphic — it doesn't return — so a match made up
+ *     entirely of `fail()` branches has no inferable return type of
+ *     `()`, and `() := match` would still be ill-typed (or at best
+ *     change a polymorphic match into a unit-typed one).
  */
 function allMatchBranchesAreUnitOrFail(matchExpr: Parser.Node): boolean {
-  const isUnitOrFail = (expr: Parser.Node | undefined): boolean => {
-    if (!expr) { return false; }
+  const classify = (expr: Parser.Node | undefined): 'unit' | 'fail' | 'other' => {
+    if (!expr) { return 'other'; }
     const t = expr.text.trim();
-    return t === '()' || t === 'fail()';
+    if (t === '()') { return 'unit'; }
+    if (t === 'fail()') { return 'fail'; }
+    return 'other';
   };
 
   const casesNode = matchExpr.namedChildren.find(c => c.type === 'cases');
   if (!casesNode) { return false; }
+
+  let sawUnit = false;
 
   // `then-expression` is the *last* `expression` child of each `onecase`
   // (the first one is the pattern).
@@ -590,17 +599,21 @@ function allMatchBranchesAreUnitOrFail(matchExpr: Parser.Node): boolean {
   if (onecases.length === 0) { return false; }
   for (const oc of onecases) {
     const exprs = oc.namedChildren.filter(c => c.type === 'expression');
-    if (!isUnitOrFail(exprs[exprs.length - 1])) { return false; }
+    const kind = classify(exprs[exprs.length - 1]);
+    if (kind === 'other') { return false; }
+    if (kind === 'unit') { sawUnit = true; }
   }
 
   // Optional else clause lives in a `cases2` sibling with one `expression`.
   const elseNode = casesNode.namedChildren.find(c => c.type === 'cases2');
   if (elseNode) {
     const elseExpr = elseNode.namedChildren.find(c => c.type === 'expression');
-    if (!isUnitOrFail(elseExpr)) { return false; }
+    const kind = classify(elseExpr);
+    if (kind === 'other') { return false; }
+    if (kind === 'unit') { sawUnit = true; }
   }
 
-  return true;
+  return sawUnit;
 }
 
 /**

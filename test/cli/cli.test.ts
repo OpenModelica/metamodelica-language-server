@@ -663,6 +663,30 @@ end foo;
     assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), src);
   });
 
+  test('does not suggest `() :=` when every match branch is `fail()`', async () => {
+    // `fail()` is polymorphic — it doesn't return — so a match made up
+    // entirely of `fail()` branches has no inferable return type of `()`,
+    // and rewriting `_ := match` to `() := match` would constrain a
+    // polymorphic match into a unit-typed one (or be ill-typed outright).
+    // At least one branch must be literally `()`.
+    const src = `function foo
+  input Integer x;
+algorithm
+  _ := match x
+    case 1 then fail();
+    else fail();
+  end match;
+end foo;
+`;
+    const filePath = path.join(tmpDir, 'all_fail.mo');
+    fs.writeFileSync(filePath, src);
+
+    const result = await processFiles([filePath], true, new Set(['wildcard-match']));
+
+    assert.strictEqual(result.issuesFixed, 0);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), src);
+  });
+
   test('does not flag protected declarations inside `partial function`', async () => {
     // Regression: `partial function` is a template — its protected vars
     // (`Token tok;` below) exist for inheriting functions to reuse, so
