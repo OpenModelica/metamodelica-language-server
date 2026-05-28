@@ -33,7 +33,7 @@
  *
  */
 
-import Parser from 'web-tree-sitter';
+import { Parser, Language, Tree, Node as SyntaxNode } from 'web-tree-sitter';
 import * as fs from 'fs';
 import * as path from 'path';
 import { logger } from '../../util/logger';
@@ -112,7 +112,7 @@ export interface GDBMIList {
 
 export class GDBMIParser {
   private parser: Parser | undefined = undefined;
-  private tree: Parser.Tree | undefined = undefined;
+  private tree: Tree | undefined = undefined;
 
   async initialize() {
     this.parser = await initializeGdbMiParser();
@@ -123,7 +123,7 @@ export class GDBMIParser {
       throw new Error("GDB/MI parser undefined. Call initialize first.");
     }
 
-    this.tree = this.parser!.parse(input);
+    this.tree = this.parser!.parse(input)!;
     // walkTree and print it for debugging purpose
     this.walkTree(this.tree.rootNode);
     // return GDBMIOutput
@@ -137,7 +137,7 @@ export class GDBMIParser {
    * @param node - The current syntax node to process.
    * @param depth - The current depth in the tree, used for indentation. Defaults to 0.
    */
-  private walkTree(node: Parser.SyntaxNode, depth: number = 0) {
+  private walkTree(node: SyntaxNode, depth: number = 0) {
     const indent = '  '.repeat(depth);
     logger.debug(`${indent}${node.type}: ${node.text}`);
 
@@ -224,7 +224,7 @@ export class GDBMIParser {
    * - 'ConsoleStreamOutput': Assigns the text of the node to the `consoleStreamOutput` property.
    * - 'LogStreamOutput': Assigns the text of the node to the `logStreamOutput` property.
    */
-  private parseResultRecord(node: Parser.SyntaxNode): GDBMIResultRecord {
+  private parseResultRecord(node: SyntaxNode): GDBMIResultRecord {
     const resultRecord: GDBMIResultRecord = {
       token: 0,
       cls: '',
@@ -271,7 +271,7 @@ export class GDBMIParser {
    * @param node - The SyntaxNode to be parsed.
    * @returns A GDBMIOutOfBandRecord object containing the parsed information.
    */
-  private parseOutOfBandRecord(node: Parser.SyntaxNode): GDBMIOutOfBandRecord {
+  private parseOutOfBandRecord(node: SyntaxNode): GDBMIOutOfBandRecord {
     const outOfBandRecord: GDBMIOutOfBandRecord = {};
 
     for (let i = 0; i < node.childCount; i++) {
@@ -304,7 +304,7 @@ export class GDBMIParser {
    * based on the type of each child node. The possible types are 'ExecAsyncOutput',
    * 'StatusAsyncOutput', and 'NotifyAsyncOutput'.
    */
-  private parseAsyncRecord(node: Parser.SyntaxNode): GDBMIAsyncRecord {
+  private parseAsyncRecord(node: SyntaxNode): GDBMIAsyncRecord {
     const asyncRecord: GDBMIAsyncRecord = {};
 
     for (let i = 0; i < node.childCount; i++) {
@@ -335,7 +335,7 @@ export class GDBMIParser {
    * @param node - The syntax node to parse.
    * @returns A `GDBMIExecAsyncOutput` object containing the parsed exec async output.
    */
-  private parseExecAsynOutput(node: Parser.SyntaxNode): GDBMIExecAsyncOutput {
+  private parseExecAsynOutput(node: SyntaxNode): GDBMIExecAsyncOutput {
     const execAsyncOutput: GDBMIExecAsyncOutput = {};
 
     for (let i = 0; i < node.childCount; i++) {
@@ -360,7 +360,7 @@ export class GDBMIParser {
    * @param node - The syntax node to parse.
    * @returns A `GDBMIStatusAsyncOutput` object containing the parsed status async output.
    */
-  private parseStatusAsyncOutput(node: Parser.SyntaxNode): GDBMIStatusAsyncOutput {
+  private parseStatusAsyncOutput(node: SyntaxNode): GDBMIStatusAsyncOutput {
     const statusAsyncOutput: GDBMIStatusAsyncOutput = {};
 
     for (let i = 0; i < node.childCount; i++) {
@@ -385,7 +385,7 @@ export class GDBMIParser {
    * @param node - The syntax node to parse.
    * @returns A `GDBMINotifyAsyncOutput` object containing the parsed notify async output.
    */
-  private parseNotifyAsyncOutput(node: Parser.SyntaxNode): GDBMINotifyAsyncOutput {
+  private parseNotifyAsyncOutput(node: SyntaxNode): GDBMINotifyAsyncOutput {
     const notifyAsyncOutput: GDBMINotifyAsyncOutput = {};
 
     for (let i = 0; i < node.childCount; i++) {
@@ -410,7 +410,7 @@ export class GDBMIParser {
    * @param node - The syntax node to parse.
    * @returns A `GDBMIAsyncOutput` object containing the parsed async output.
    */
-  private parseAsyncOutput(node: Parser.SyntaxNode): GDBMIAsyncOutput {
+  private parseAsyncOutput(node: SyntaxNode): GDBMIAsyncOutput {
     const asyncOutput: GDBMIAsyncOutput = {
       asyncClass: '',
       miResult: []
@@ -444,7 +444,7 @@ export class GDBMIParser {
    * @param node - The syntax node to parse.
    * @returns A GDBMIResult object containing the parsed variable and value.
    */
-  private parseResult(node: Parser.SyntaxNode): GDBMIResult {
+  private parseResult(node: SyntaxNode): GDBMIResult {
     const result: GDBMIResult = {
       variable: '',
       miValue: {
@@ -481,7 +481,7 @@ export class GDBMIParser {
    * @param node - The syntax node to parse.
    * @returns A GDBMIValue object representing the parsed value.
    */
-  private parseValue(node: Parser.SyntaxNode): GDBMIValue {
+  private parseValue(node: SyntaxNode): GDBMIValue {
     const value: GDBMIValue = {
       value: ''
     };
@@ -514,7 +514,7 @@ export class GDBMIParser {
    * @param node - The SyntaxNode to parse, which should represent a GDB/MI tuple.
    * @returns A GDBMITuple object containing the parsed results.
    */
-  private parseTuple(node: Parser.SyntaxNode): GDBMITuple {
+  private parseTuple(node: SyntaxNode): GDBMITuple {
     const tuple: GDBMITuple = {
       miResultsList: []
     };
@@ -535,7 +535,7 @@ export class GDBMIParser {
    * @param node - The syntax node representing the list to be parsed.
    * @returns A GDBMIList object containing the parsed values and results.
    */
-  private parseList(node: Parser.SyntaxNode): GDBMIList {
+  private parseList(node: SyntaxNode): GDBMIList {
     const list: GDBMIList = {
       miValuesList: [],
       miResultsList: []
@@ -571,7 +571,7 @@ export class GDBMIParser {
    * based on the type of each child node. The possible types are 'ConsoleStream',
    * 'TargetStream', and 'LogStream'.
    */
-  private parseStreamRecord(node: Parser.SyntaxNode): GDBMIStreamRecord {
+  private parseStreamRecord(node: SyntaxNode): GDBMIStreamRecord {
     const streamRecord: GDBMIStreamRecord = {
       type: GDBMIStreamRecordType.consoleStream,
       value: ''
@@ -613,7 +613,7 @@ export class GDBMIParser {
  * @returns tree-sitter-gdbmi parser
  */
 export async function initializeGdbMiParser(): Promise<Parser> {
-  await Parser.init();
+  await Parser.init({ locateFile: () => path.join(__dirname, 'web-tree-sitter.wasm') });
   const parser = new Parser;
 
   const gdbmiWasmFile = path.join(__dirname, 'tree-sitter-gdbmi.wasm');
@@ -621,7 +621,7 @@ export async function initializeGdbMiParser(): Promise<Parser> {
     throw new Error(`Can't find 'tree-sitter-gdbmi.wasm' at ${gdbmiWasmFile}`);
   }
 
-  const gdbmi = await Parser.Language.load(gdbmiWasmFile);
+  const gdbmi = await Language.load(gdbmiWasmFile);
   parser.setLanguage(gdbmi);
 
   return parser;

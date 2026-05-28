@@ -117,7 +117,7 @@ export function getAllDeclarationsInTree(tree: Parser.Tree, queries: MetaModelic
  * @param children  DocumentSymbol children.
  * @returns         Symbol information from node.
  */
-export function nodeToDocumentSymbol(node: Parser.SyntaxNode, queries: MetaModelicaQueries, children: LSP.DocumentSymbol[] ): LSP.DocumentSymbol | null {
+export function nodeToDocumentSymbol(node: Parser.Node, queries: MetaModelicaQueries, children: LSP.DocumentSymbol[] ): LSP.DocumentSymbol | null {
   const name = queries.getIdentifier(node);
   if (name === undefined || isEmpty(name)) {
     return null;
@@ -156,7 +156,7 @@ export function nodeToDocumentSymbol(node: Parser.SyntaxNode, queries: MetaModel
  * @param node Node containing class_definition
  * @returns Symbol kind or `undefined`.
  */
-function getKind(node: Parser.SyntaxNode, queries: MetaModelicaQueries): LSP.SymbolKind | undefined {
+function getKind(node: Parser.Node, queries: MetaModelicaQueries): LSP.SymbolKind | undefined {
 
   const classType = queries.getClassType(node);
   if (classType === undefined) {

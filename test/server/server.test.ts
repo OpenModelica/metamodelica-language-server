@@ -53,16 +53,16 @@ suite('MetaModelica tree-sitter parser', () => {
 
   test('Parse string', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(metaModelicaTestString);
+    const tree = parser.parse(metaModelicaTestString)!;
     const parsedString = tree.rootNode.toString();
     assert.equal(parsedString, parsedMetaModelicaTestString);
   });
 
   test('Identifier of type class', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse("type Temperature = Real(unit = \"K \");");
+    const tree = parser.parse("type Temperature = Real(unit = \"K \");")!;
     const classNode = tree.rootNode.childForFieldName("classDefinitionList")!;
-    const queries = new MetaModelicaQueries(parser.getLanguage());
+    const queries = new MetaModelicaQueries(parser.language!);
     const name = queries.getIdentifier(classNode);
     assert.equal(name, 'Temperature');
   });

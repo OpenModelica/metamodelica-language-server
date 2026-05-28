@@ -39,7 +39,7 @@
  * -----------------------------------------------------------------------------
  */
 
-import Parser from 'web-tree-sitter';
+import { Parser, Language } from 'web-tree-sitter';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -49,7 +49,7 @@ import * as path from 'path';
  * @returns tree-sitter-metamodelica parser
  */
 export async function initializeMetaModelicaParser(): Promise<Parser> {
-  await Parser.init();
+  await Parser.init({ locateFile: () => path.join(__dirname, 'web-tree-sitter.wasm') });
   const parser = new Parser;
 
   const metamodelicaWasmFile = path.join(__dirname, 'tree-sitter-metamodelica.wasm');
@@ -57,7 +57,7 @@ export async function initializeMetaModelicaParser(): Promise<Parser> {
     throw new Error(`Can't find 'tree-sitter-metamodelica.wasm' at ${metamodelicaWasmFile}`);
   }
 
-  const metaModelica = await Parser.Language.load(metamodelicaWasmFile);
+  const metaModelica = await Language.load(metamodelicaWasmFile);
   parser.setLanguage(metaModelica);
 
   return parser;

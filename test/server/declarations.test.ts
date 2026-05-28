@@ -102,8 +102,8 @@ const expectedSymbols = [
 suite('nodeToDocumentSymbol', () => {
   test('type to TypeParameter', async () => {
   const parser = await initializeMetaModelicaParser();
-  const tree = parser.parse("type Temperature = Real(unit = \"K \");");
-  const queries = new MetaModelicaQueries(parser.getLanguage());
+  const tree = parser.parse("type Temperature = Real(unit = \"K \");")!;
+  const queries = new MetaModelicaQueries(parser.language!);
   const symbol = nodeToDocumentSymbol(tree.rootNode.childForFieldName("classDefinitionList")!, queries, []);
 
   assert.equal(symbol?.name, 'Temperature');
@@ -114,8 +114,8 @@ suite('nodeToDocumentSymbol', () => {
 suite('getAllDeclarationsInTree', () => {
   test('Definitions and types', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(metaModelicaTestString);
-    const queries = new MetaModelicaQueries(parser.getLanguage());
+    const tree = parser.parse(metaModelicaTestString)!;
+    const queries = new MetaModelicaQueries(parser.language!);
     const symbols = getAllDeclarationsInTree(tree, queries);
 
     assert.deepEqual(symbols, expectedSymbols);

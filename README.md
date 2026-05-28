@@ -81,7 +81,7 @@ building), the tool is available as `mmlsc`.
 ### Via VSIX File
 
 Download the latest
-[metamodelica-language-server-0.2.0.vsix](https://github.com/OpenModelica/metamodelica-language-server/releases/download/v0.2.0/metamodelica-language-server-0.2.0.vsix)
+[metamodelica-language-server-0.3.0.vsix](https://github.com/OpenModelica/metamodelica-language-server/releases/download/v0.3.0/metamodelica-language-server-0.3.0.vsix)
 from the
 [releases](https://github.com/OpenModelica/metamodelica-language-server/releases)
 page.
@@ -91,7 +91,7 @@ on how to install a .vsix file.
 Use the `Install from VSIX` command or run
 
 ```bash
-code --install-extension metamodelica-language-server-0.2.0.vsix
+code --install-extension metamodelica-language-server-0.3.0.vsix
 ```
 
 ## Contributing ❤️
@@ -116,17 +116,16 @@ Found a bug or having issues? Open a
 
 ### Dependencies
 
-- Docker installed and running.
+- Node.js >= 22
 
 ### Quick install
 
 ```bash
 npm install
-npm run postinstall
 npm run esbuild
 ```
 
-### VS COde
+### VS Code
 
 - Open VS Code on this folder.
 - Press ``Ctrl+Shift+B`` to start compiling the client and server.
