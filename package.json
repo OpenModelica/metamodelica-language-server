@@ -163,7 +163,7 @@
     "glob": "^13.0.6",
     "axios": "^1.16.1",
     "@vscode/debugadapter": "^1.68.0",
-    "tree-sitter-cli": "^0.23.2",
+    "tree-sitter-cli": "^0.26.9",
     "tree-sitter-gdbmi": "github:novafacing/tree-sitter-gdbmi"
   }
 }
