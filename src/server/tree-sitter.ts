@@ -40,7 +40,7 @@
  */
 
 import * as LSP from 'vscode-languageserver/node';
-import { SyntaxNode } from 'web-tree-sitter';
+import { Node as SyntaxNode } from 'web-tree-sitter';
 
 /**
  * Recursively iterate over all nodes in a tree.
@@ -67,7 +67,6 @@ export function findFirst(start: SyntaxNode, callback: (n: SyntaxNode) => boolea
 
   const cursor = start.walk();
   let reachedRoot = false;
-  let retracing = false;
 
   while (!reachedRoot) {
     const node = cursor.currentNode;
@@ -83,16 +82,14 @@ export function findFirst(start: SyntaxNode, callback: (n: SyntaxNode) => boolea
       continue;
     }
 
-    retracing = true;
-    while (retracing) {
-        if (!cursor.gotoParent()) {
-            retracing = false;
-            reachedRoot = true;
-        }
-
-        if (cursor.gotoNextSibling()) {
-        retracing = false;
-        }
+    while (true) {
+      if (!cursor.gotoParent()) {
+        reachedRoot = true;
+        break;
+      }
+      if (cursor.gotoNextSibling()) {
+        break;
+      }
     }
   }
 

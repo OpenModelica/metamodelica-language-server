@@ -76,7 +76,9 @@
                   "type": "string"
                 },
                 "description": "Arguments to omc. e.g., MOS file",
-                "default": ["script.mos"]
+                "default": [
+                  "script.mos"
+                ]
               },
               "cwd": {
                 "type": "string",
@@ -87,7 +89,13 @@
                 "type": "string",
                 "description": "Logging level for the debugger",
                 "default": "warning",
-                "enum": ["debug", "log", "info", "warning", "error"]
+                "enum": [
+                  "debug",
+                  "log",
+                  "info",
+                  "warning",
+                  "error"
+                ]
               }
             }
           }
@@ -99,7 +107,9 @@
             "request": "launch",
             "gdb": "gdb",
             "program": "omc",
-            "arguments": ["script.mos"],
+            "arguments": [
+              "script.mos"
+            ],
             "cwd": "${workspaceFolder}",
             "logLevel": "info"
           }
@@ -114,7 +124,9 @@
               "request": "launch",
               "gdb": "gdb",
               "program": "omc",
-              "arguments": ["script.mos"],
+              "arguments": [
+                "script.mos"
+              ],
               "cwd": "${workspaceFolder}",
               "logLevel": "info"
             }
@@ -133,37 +145,38 @@
     "test-compile": "tsc -b ./",
     "lint": "eslint ./src/** ./test/** --ext .ts,.tsx",
     "tree-sitter-metamodelica": "cd src/server && node tree.sitter.metamodelica.download.js",
-    "tree-sitter-gdbmi": "cd node_modules/tree-sitter-gdbmi && ../../node_modules/.bin/tree-sitter generate && ../../node_modules/.bin/tree-sitter build --wasm --docker . && cd ../../src/debugger/parser && node tree.sitter.gdbmi.js",
+    "tree-sitter-gdbmi": "tree-sitter build --wasm --output src/debugger/parser/tree-sitter-gdbmi.wasm node_modules/tree-sitter-gdbmi",
     "postinstall": "npm run tree-sitter-metamodelica && npm run tree-sitter-gdbmi",
     "test": "npm run test-compile && node ./dist/test/runTest",
     "all": "npm run postinstall && npm run esbuild && npm run lint && npm run test && npm run vscode:prepublish"
   },
-  "overrides": {
-    "diff": "^9.0.0",
-    "serialize-javascript": "^7.0.5"
-  },
   "dependencies": {
+    "tree-sitter-cli": "^0.26.9",
     "vscode-languageclient": "^9.0.1",
-    "tree-sitter": "^0.21.1",
     "vscode-languageserver": "^9.0.1",
     "vscode-languageserver-textdocument": "^1.0.12",
-    "web-tree-sitter": "^0.22.5",
-    "tree-sitter-cli": "^0.23.2"
+    "web-tree-sitter": "^0.26.9"
+  },
+  "overrides": {
+    "serialize-javascript": "^7.0.5"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.5",
+    "@eslint/js": "^10.0.1",
     "@types/mocha": "^10.0.10",
-    "@types/node": "^22.13.10",
+    "@types/node": "^25.9.1",
+    "@types/vscode": "^1.120.0",
     "@typescript-eslint/eslint-plugin": "^8.60.0",
     "@typescript-eslint/parser": "^8.60.0",
-    "esbuild": "^0.28.0",
-    "eslint": "^9.22.0",
-    "mocha": "^11.7.6",
-    "ts-node": "^10.9.2",
-    "@types/vscode": "^1.120.0",
-    "@vscode/test-electron": "^2.5.2",
-    "glob": "^13.0.6",
-    "axios": "^1.16.1",
     "@vscode/debugadapter": "^1.68.0",
-    "tree-sitter-gdbmi": "github:novafacing/tree-sitter-gdbmi"
+    "@vscode/test-electron": "^2.5.2",
+    "axios": "^1.16.1",
+    "esbuild": "^0.28.0",
+    "eslint": "^10.4.0",
+    "glob": "^13.0.6",
+    "globals": "^17.6.0",
+    "mocha": "^11.3.0",
+    "tree-sitter-gdbmi": "github:novafacing/tree-sitter-gdbmi",
+    "ts-node": "^10.9.2"
   }
 }

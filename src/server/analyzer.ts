@@ -42,7 +42,7 @@
 import * as LSP from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
-import Parser from 'web-tree-sitter';
+import { Parser, Language, Tree, Query, Node as SyntaxNode } from 'web-tree-sitter';
 
 import { getAllDeclarationsInTree } from './declarations';
 import { getDiagnosticsFromTree } from './diagnostics';
@@ -51,32 +51,32 @@ import { logger } from '../util/logger';
 type AnalyzedDocument = {
   document: TextDocument,
   declarations: LSP.DocumentSymbol[],
-  tree: Parser.Tree
+  tree: Tree
 };
 
 export class MetaModelicaQueries {
-  public identifier: Parser.Query;
-  public classType: Parser.Query;
-  public error: Parser.Query;
-  public illegalEquals: Parser.Query;
-  public illegalAssign: Parser.Query;
-  public modifierAssign: Parser.Query;
-  public caseEquation: Parser.Query;
-  public missingElseCaseMatch: Parser.Query;
-  public matchcontinue: Parser.Query;
-  public startEndIdent: Parser.Query;
+  public identifier: Query;
+  public classType: Query;
+  public error: Query;
+  public illegalEquals: Query;
+  public illegalAssign: Query;
+  public modifierAssign: Query;
+  public caseEquation: Query;
+  public missingElseCaseMatch: Query;
+  public matchcontinue: Query;
+  public startEndIdent: Query;
 
-  constructor(language: Parser.Language) {
-    this.identifier = language.query('(IDENT) @identifier');
-    this.classType = language.query('(class_type) @type');
-    this.error = language.query('(ERROR) @error');
-    this.illegalEquals = language.query('(assign_clause_a (simple_expression) (EQUALS) @error )');
-    this.illegalAssign = language.query('[ ( equation (simple_expression) (ASSIGN) @error ) ( constraint (simple_expression) (ASSIGN) @error ) ]');
-    this.modifierAssign = language.query('(modification (ASSIGN) @warning)');
-    this.caseEquation = language.query('(onecase (EQUATION) @info)');
-    this.missingElseCaseMatch = language.query('(match_expression [(MATCH) (MATCHCONTINUE)] @info (cases case: (onecase)* case: (onecase) . ))');
-    this.matchcontinue = language.query('(match_expression . (MATCHCONTINUE) @info (expression) )');
-    this.startEndIdent = language.query('(class_specifier identifier: (identifier) @start endIdentifier: (identifier) @end )');
+  constructor(language: Language) {
+    this.identifier = new Query(language, '(IDENT) @identifier');
+    this.classType = new Query(language, '(class_type) @type');
+    this.error = new Query(language, '(ERROR) @error');
+    this.illegalEquals = new Query(language, '(assign_clause_a (simple_expression) (EQUALS) @error )');
+    this.illegalAssign = new Query(language, '[ ( equation (simple_expression) (ASSIGN) @error ) ( constraint (simple_expression) (ASSIGN) @error ) ]');
+    this.modifierAssign = new Query(language, '(modification (ASSIGN) @warning)');
+    this.caseEquation = new Query(language, '(onecase (EQUATION) @info)');
+    this.missingElseCaseMatch = new Query(language, '(match_expression [(MATCH) (MATCHCONTINUE)] @info (cases case: (onecase)* case: (onecase) . ))');
+    this.matchcontinue = new Query(language, '(match_expression . (MATCHCONTINUE) @info (expression) )');
+    this.startEndIdent = new Query(language, '(class_specifier identifier: (identifier) @start endIdentifier: (identifier) @end )');
   }
 
   /**
@@ -85,7 +85,7 @@ export class MetaModelicaQueries {
    * @param node Node.
    * @returns Identifier
    */
-  public getIdentifier(node: Parser.SyntaxNode): string | undefined {
+  public getIdentifier(node: SyntaxNode): string | undefined {
     const captures = this.identifier.captures(node);
     if (captures.length > 0) {
       return captures[0].node.text;
@@ -100,7 +100,7 @@ export class MetaModelicaQueries {
    * @param node Node.
    * @returns Class type
    */
-  public getClassType(node: Parser.SyntaxNode): string | undefined {
+  public getClassType(node: SyntaxNode): string | undefined {
     const captures = this.classType.captures(node);
     if (captures.length > 0) {
       return captures[0].node.text;
@@ -117,7 +117,7 @@ export default class Analyzer {
 
   constructor (parser: Parser) {
     this.parser = parser;
-    this.queries = new MetaModelicaQueries(parser.getLanguage());
+    this.queries = new MetaModelicaQueries(parser.language!);
   }
 
   public analyze(document: TextDocument): LSP.Diagnostic[] {
@@ -126,7 +126,7 @@ export default class Analyzer {
     const fileContent = document.getText();
     const uri = document.uri;
 
-    const tree = this.parser.parse(fileContent);
+    const tree = this.parser.parse(fileContent)!;
     logger.debug(tree.rootNode.toString());
 
     // Get declarations

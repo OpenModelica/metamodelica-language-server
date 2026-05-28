@@ -58,7 +58,7 @@ export interface SilencedOutputFix {
  * Extract tuple element expressions from a `(a, b, c)` expression node.
  * Returns null if the expression is not a parenthesized tuple with at least two elements.
  */
-function getTupleInfo(expr: Parser.SyntaxNode): { inner: Parser.SyntaxNode; elements: Parser.SyntaxNode[] } | null {
+function getTupleInfo(expr: Parser.Node): { inner: Parser.Node; elements: Parser.Node[] } | null {
   // A tuple expression `(a, b, c)` parses as:
   //   expression -> simple_expression -> LPAR expression COMMA expression ... RPAR
   const inner = expr.namedChildren.find(c => c.type === 'simple_expression');
@@ -80,7 +80,7 @@ function getTupleInfo(expr: Parser.SyntaxNode): { inner: Parser.SyntaxNode; elem
  * as function calls (`f(x)`) or qualified names (`Foo.bar`) must not be removed
  * because they may carry information or have side-effects.
  */
-function isSimpleIdentifier(node: Parser.SyntaxNode): boolean {
+function isSimpleIdentifier(node: Parser.Node): boolean {
   // expression → simple_expression → component_reference__function_call → component_reference → IDENT
   const se = node.namedChildren.find(c => c.type === 'simple_expression');
   if (!se || se.namedChildren.length !== 1) { return false; }
@@ -95,7 +95,7 @@ function isSimpleIdentifier(node: Parser.SyntaxNode): boolean {
  * Build replacement text for a tuple after removing one element.
  * With one element remaining the outer parentheses are dropped.
  */
-function buildTupleNewText(elements: Parser.SyntaxNode[], skipIndex: number): string {
+function buildTupleNewText(elements: Parser.Node[], skipIndex: number): string {
   const remaining = elements.filter((_, i) => i !== skipIndex).map(e => e.text);
   if (remaining.length === 1) { return remaining[0]; }
   return '(' + remaining.join(', ') + ')';
@@ -105,7 +105,7 @@ function buildTupleNewText(elements: Parser.SyntaxNode[], skipIndex: number): st
  * Get the IDENT node from a component_declaration node.
  * In the grammar: component_declaration → declaration → IDENT (field: identifier)
  */
-function getDeclIdent(decl: Parser.SyntaxNode): Parser.SyntaxNode | null {
+function getDeclIdent(decl: Parser.Node): Parser.Node | null {
   const declNode = decl.namedChildren.find(c => c.type === 'declaration');
   if (!declNode) { return null; }
   return declNode.namedChildren.find(c => c.type === 'IDENT') || null;
@@ -115,12 +115,12 @@ function getDeclIdent(decl: Parser.SyntaxNode): Parser.SyntaxNode | null {
  * Return true if `name` appears as any IDENT node inside `scope`,
  * excluding the subtree rooted at `skipNode` (the declaration element).
  */
-function isNameUsed(name: string, scope: Parser.SyntaxNode, skipNode: Parser.SyntaxNode): boolean {
+function isNameUsed(name: string, scope: Parser.Node, skipNode: Parser.Node): boolean {
   let found = false;
   const skipStart = skipNode.startIndex;
   const skipEnd = skipNode.endIndex;
 
-  function visit(node: Parser.SyntaxNode): void {
+  function visit(node: Parser.Node): void {
     if (found) { return; }
     if (node.startIndex === skipStart && node.endIndex === skipEnd) { return; }
     if (node.type === 'IDENT' && node.text === name) {
@@ -144,9 +144,9 @@ function isNameUsed(name: string, scope: Parser.SyntaxNode, skipNode: Parser.Syn
  * list.
  */
 function buildVarRemoveEdits(
-  elementNode: Parser.SyntaxNode,
-  componentClause: Parser.SyntaxNode,
-  targetDecl: Parser.SyntaxNode,
+  elementNode: Parser.Node,
+  componentClause: Parser.Node,
+  targetDecl: Parser.Node,
 ): LSP.TextEdit[] {
   const declarations = componentClause.namedChildren.filter(c => c.type === 'component_declaration');
 
@@ -180,7 +180,7 @@ function buildVarRemoveEdits(
     }];
   } else {
     // Last: remove ", name" by spanning back to the preceding COMMA
-    let commaNode: Parser.SyntaxNode | null = null;
+    let commaNode: Parser.Node | null = null;
     for (let i = nodeIdx - 1; i >= 0; i--) {
       if (allChildren[i].type === 'COMMA') {
         commaNode = allChildren[i];
@@ -204,9 +204,9 @@ function buildVarRemoveEdits(
  * Check all component_declarations within an element node for unused variables.
  */
 function checkElementDeclarations(
-  elementNode: Parser.SyntaxNode,
-  scope: Parser.SyntaxNode,
-  results: { varNode: Parser.SyntaxNode; fix: UnusedVarFix }[],
+  elementNode: Parser.Node,
+  scope: Parser.Node,
+  results: { varNode: Parser.Node; fix: UnusedVarFix }[],
 ): void {
   const componentClause = elementNode.namedChildren.find(c => c.type === 'component_clause');
   if (!componentClause) { return; }
@@ -232,8 +232,8 @@ function checkElementDeclarations(
  * Find unused protected variables in function bodies and unused local
  * variables inside match/matchcontinue expressions.
  */
-function getUnusedVariables(rootNode: Parser.SyntaxNode): { varNode: Parser.SyntaxNode; fix: UnusedVarFix }[] {
-  const results: { varNode: Parser.SyntaxNode; fix: UnusedVarFix }[] = [];
+function getUnusedVariables(rootNode: Parser.Node): { varNode: Parser.Node; fix: UnusedVarFix }[] {
+  const results: { varNode: Parser.Node; fix: UnusedVarFix }[] = [];
 
   TreeSitterUtil.forEach(rootNode, (node) => {
     // Protected variables declared inside a composition (function body)
@@ -270,8 +270,8 @@ function getUnusedVariables(rootNode: Parser.SyntaxNode): { varNode: Parser.Synt
  * Find arguments of a `match`/`matchcontinue` that are a plain identifier and
  * matched by `_` in every case branch, and are therefore unused.
  */
-function getUnusedMatchArguments(rootNode: Parser.SyntaxNode): { argNode: Parser.SyntaxNode; fix: UnusedArgFix }[] {
-  const results: { argNode: Parser.SyntaxNode; fix: UnusedArgFix }[] = [];
+function getUnusedMatchArguments(rootNode: Parser.Node): { argNode: Parser.Node; fix: UnusedArgFix }[] {
+  const results: { argNode: Parser.Node; fix: UnusedArgFix }[] = [];
 
   TreeSitterUtil.forEach(rootNode, (node) => {
     if (node.type !== 'match_expression') {
@@ -292,7 +292,7 @@ function getUnusedMatchArguments(rootNode: Parser.SyntaxNode): { argNode: Parser
     const onecases = casesNode.namedChildren.filter(c => c.type === 'onecase');
     if (onecases.length === 0) { return true; }
 
-    const caseInfos: { inner: Parser.SyntaxNode; elements: Parser.SyntaxNode[] }[] = [];
+    const caseInfos: { inner: Parser.Node; elements: Parser.Node[] }[] = [];
     for (const onecase of onecases) {
       const patternExpr = onecase.namedChildren.find(c => c.type === 'expression');
       if (!patternExpr) { return true; }
@@ -328,7 +328,7 @@ function getUnusedMatchArguments(rootNode: Parser.SyntaxNode): { argNode: Parser
  * Check whether a simple_expression node represents a bare wildcard `_`.
  * Structure: simple_expression → component_reference__function_call → component_reference → WILD
  */
-function isWildcardSimpleExpr(simpleExpr: Parser.SyntaxNode): boolean {
+function isWildcardSimpleExpr(simpleExpr: Parser.Node): boolean {
   if (simpleExpr.type !== 'simple_expression') { return false; }
   if (simpleExpr.namedChildren.length !== 1) { return false; }
   const crf = simpleExpr.namedChildren[0];
@@ -343,8 +343,8 @@ function isWildcardSimpleExpr(simpleExpr: Parser.SyntaxNode): boolean {
  * called function is silenced unnecessarily — in MetaModelica the assignment
  * can simply be omitted.
  */
-function getSilencedOutputs(rootNode: Parser.SyntaxNode): { wildNode: Parser.SyntaxNode; fix: SilencedOutputFix }[] {
-  const results: { wildNode: Parser.SyntaxNode; fix: SilencedOutputFix }[] = [];
+function getSilencedOutputs(rootNode: Parser.Node): { wildNode: Parser.Node; fix: SilencedOutputFix }[] {
+  const results: { wildNode: Parser.Node; fix: SilencedOutputFix }[] = [];
 
   TreeSitterUtil.forEach(rootNode, (node) => {
     if (node.type !== 'assign_clause_a') { return true; }
@@ -493,7 +493,7 @@ export function getDiagnosticsFromTree(tree: Parser.Tree, queries: MetaModelicaQ
   if (matches.length > 0) {
     for (const match of matches ) {
 
-      logger.debug("pattern: " + match.pattern.toString());
+      logger.debug("pattern: " + match.patternIndex.toString());
 
       const startNode = match.captures[0].node;
       const startIdent = startNode.text;
@@ -518,7 +518,7 @@ export function getDiagnosticsFromTree(tree: Parser.Tree, queries: MetaModelicaQ
  * @param node  Syntax node
  * @returns     Diagnostic
  */
-function nodeToDiagnostic(node: Parser.SyntaxNode, severity: LSP.DiagnosticSeverity, message: string): LSP.Diagnostic {
+function nodeToDiagnostic(node: Parser.Node, severity: LSP.DiagnosticSeverity, message: string): LSP.Diagnostic {
   const diagnostic: LSP.Diagnostic = {
     range: TreeSitterUtil.range(node),
     severity: severity,

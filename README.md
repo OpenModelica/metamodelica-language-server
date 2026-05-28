@@ -81,7 +81,7 @@ building), the tool is available as `mmlsc`.
 ### Via VSIX File
 
 Download the latest
-[metamodelica-language-server-0.2.0.vsix](https://github.com/OpenModelica/metamodelica-language-server/releases/download/v0.2.0/metamodelica-language-server-0.2.0.vsix)
+[metamodelica-language-server-0.3.0.vsix](https://github.com/OpenModelica/metamodelica-language-server/releases/download/v0.3.0/metamodelica-language-server-0.3.0.vsix)
 from the
 [releases](https://github.com/OpenModelica/metamodelica-language-server/releases)
 page.
@@ -91,7 +91,7 @@ on how to install a .vsix file.
 Use the `Install from VSIX` command or run
 
 ```bash
-code --install-extension metamodelica-language-server-0.2.0.vsix
+code --install-extension metamodelica-language-server-0.3.0.vsix
 ```
 
 ## Contributing ❤️
@@ -116,17 +116,16 @@ Found a bug or having issues? Open a
 
 ### Dependencies
 
-- Docker installed and running.
+- Node.js >= 22
 
 ### Quick install
 
 ```bash
 npm install
-npm run postinstall
 npm run esbuild
 ```
 
-### VS COde
+### VS Code
 
 - Open VS Code on this folder.
 - Press ``Ctrl+Shift+B`` to start compiling the client and server.
@@ -140,6 +139,37 @@ npm run esbuild
   instance of VSCode, open a document in `'metamodelica'` language mode.
   - Check the console output of `MetaModelica Language Server` to see the parsed
     tree of the opened file.
+
+## Testing
+
+The test suite runs inside a VS Code instance (via [`@vscode/test-electron`](https://github.com/microsoft/vscode-test)) and requires a display. It also exercises the GDB adapter, so `gdb` and `omc` must be on `PATH`.
+
+### Prerequisites
+
+- Node.js >= 22
+- `gdb`
+- `omc` (OpenModelica Compiler)
+- A display server — on a headless machine use `xvfb`
+
+### Running the tests
+
+Build the extension first, then run the suite:
+
+```bash
+npm install
+npm run esbuild
+npm test
+```
+
+On a headless machine (e.g. WSL2 without WSLg, or a CI server) provide a
+virtual display with `xvfb-run`:
+
+```bash
+sudo apt-get install -y xvfb gdb
+xvfb-run -a npm test
+```
+
+This is equivalent to what the CI workflow does.
 
 ## Build and Install Extension
 

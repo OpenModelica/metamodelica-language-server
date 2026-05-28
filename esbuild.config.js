@@ -40,7 +40,7 @@ async function main() {
     sourcesContent: false,
     platform: 'node',
     outfile: './out/server.js',
-    external: ['vscode'],
+    external: ['vscode', 'web-tree-sitter'],
     logLevel: 'warning',
     plugins: [
       /* add to the end of plugins array */
@@ -64,7 +64,7 @@ async function main() {
     sourcesContent: false,
     platform: 'node',
     outfile: './out/cli.js',
-    external: ['vscode'],
+    external: ['vscode', 'web-tree-sitter'],
     banner: { js: '#!/usr/bin/env node' },
     logLevel: 'warning',
     plugins: [
@@ -141,11 +141,11 @@ main().catch(e => {
   process.exit(1);
 });
 
-// Copy tree-sitter.wasm and tree-sitter-metamodelica.wasm and
+// Copy web-tree-sitter.wasm and tree-sitter-metamodelica.wasm and
 // tree-sitter-gdbmi.wasm to the output directory
 if (!fs.existsSync('out')) {
   fs.mkdirSync('out');
 }
 fs.copyFileSync('./src/server/tree-sitter-metamodelica.wasm', './out/tree-sitter-metamodelica.wasm');
 fs.copyFileSync('./src/debugger/parser/tree-sitter-gdbmi.wasm', './out/tree-sitter-gdbmi.wasm');
-fs.copyFileSync('./node_modules/web-tree-sitter/tree-sitter.wasm', './out/tree-sitter.wasm');
+fs.copyFileSync('./node_modules/web-tree-sitter/web-tree-sitter.wasm', './out/web-tree-sitter.wasm');

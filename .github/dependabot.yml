@@ -18,9 +18,12 @@ updates:
       npm-development:
         dependency-type: development
         update-types:
+          - major
           - minor
           - patch
       npm-production:
         dependency-type: production
         update-types:
+          - major
+          - minor
           - patch

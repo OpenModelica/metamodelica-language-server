@@ -45,7 +45,6 @@ import {
 import * as DebuggerExtension from '../debugger/extension';
 
 let client: LanguageClient;
-let metaModelicaDebugger: any;
 
 export async function activate(context: ExtensionContext) {
   // Activate Debugger
@@ -103,15 +102,12 @@ export async function activate(context: ExtensionContext) {
   );
 
   // Start the client. This will also launch the server
-  client.start();
+  await client.start();
 }
 
 export function deactivate(): Thenable<void> | undefined {
   if (!client) {
     return undefined;
-  }
-  if (metaModelicaDebugger) {
-    metaModelicaDebugger.deactivate();
   }
   return client.stop();
 }
