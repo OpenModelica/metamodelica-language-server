@@ -42,9 +42,9 @@ import { initializeMetaModelicaParser } from '../server/metaModelicaParser';
 import Analyzer from '../server/analyzer';
 import { UnusedArgFix, UnusedVarFix, SilencedOutputFix, WildcardMatchFix } from '../server/diagnostics';
 
-export type CheckName = 'unused-var' | 'unused-match-arg' | 'unused-silenced-output';
+export type CheckName = 'unused-var' | 'unused-match-arg' | 'unused-silenced-output' | 'wildcard-match';
 
-export const ALL_CHECKS: CheckName[] = ['unused-var', 'unused-match-arg', 'unused-silenced-output'];
+export const ALL_CHECKS: CheckName[] = ['unused-var', 'unused-match-arg', 'unused-silenced-output', 'wildcard-match'];
 
 export interface ProcessResult {
   filesProcessed: number;
@@ -99,7 +99,7 @@ function getFixEdits(
   if (checks.has('unused-match-arg') && data.unusedArgFix) { return data.unusedArgFix.edits; }
   if (checks.has('unused-var') && data.unusedVarFix) { return data.unusedVarFix.edits; }
   if (checks.has('unused-silenced-output') && data.silencedOutputFix) { return data.silencedOutputFix.edits; }
-  if (checks.has('unused-silenced-output') && data.wildcardMatchFix) { return data.wildcardMatchFix.edits; }
+  if (checks.has('wildcard-match') && data.wildcardMatchFix) { return data.wildcardMatchFix.edits; }
   return undefined;
 }
 
@@ -192,7 +192,8 @@ async function main(): Promise<void> {
       '  Available check names:\n' +
       '    unused-var              Unused protected/local variables\n' +
       '    unused-match-arg        Unused match/matchcontinue arguments\n' +
-      '    unused-silenced-output  Unnecessary output silencing (\'_ := expr\')\n\n' +
+      '    unused-silenced-output  Unnecessary output silencing (\'_ := expr\')\n' +
+      '    wildcard-match          Wildcard before match/matchcontinue (\'_ :=\' → \'() :=\')\n\n' +
       '  paths    Files or directories to process (.mo files, directories are scanned recursively)'
     );
     process.exit(0);

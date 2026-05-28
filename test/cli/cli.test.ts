@@ -317,4 +317,67 @@ end binTreeintersection1;
 
     assert.strictEqual(result.issuesFound, 0, 'Silenced output should not be reported under unused-var');
   });
+
+  // ── wildcard-match ─────────────────────────────────────────────────────────
+
+  const wildcardMatchSource = `function testMatch
+  input Integer x;
+algorithm
+  _ := match (x)
+    case 1 then ();
+    else ();
+  end match;
+end testMatch;
+`;
+
+  const wildcardMatchFixed = `function testMatch
+  input Integer x;
+algorithm
+  () := match (x)
+    case 1 then ();
+    else ();
+  end match;
+end testMatch;
+`;
+
+  test('detects wildcard-match (report mode)', async () => {
+    const filePath = path.join(tmpDir, 'wildcard.mo');
+    fs.writeFileSync(filePath, wildcardMatchSource);
+
+    const result = await processFiles([filePath], false);
+
+    assert.strictEqual(result.filesProcessed, 1);
+    assert.strictEqual(result.issuesFound, 1);
+    assert.strictEqual(result.issuesFixed, 0);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), wildcardMatchSource);
+  });
+
+  test('fixes wildcard-match in-place (fix mode)', async () => {
+    const filePath = path.join(tmpDir, 'wildcard.mo');
+    fs.writeFileSync(filePath, wildcardMatchSource);
+
+    const result = await processFiles([filePath], true);
+
+    assert.strictEqual(result.filesProcessed, 1);
+    assert.strictEqual(result.issuesFixed, 1);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), wildcardMatchFixed);
+  });
+
+  test('--check wildcard-match reports only wildcard-match issues', async () => {
+    const filePath = path.join(tmpDir, 'wildcard.mo');
+    fs.writeFileSync(filePath, wildcardMatchSource);
+
+    const result = await processFiles([filePath], false, new Set(['wildcard-match']));
+
+    assert.strictEqual(result.issuesFound, 1, 'Wildcard-match issue should be reported');
+  });
+
+  test('--check unused-silenced-output does not report wildcard-match', async () => {
+    const filePath = path.join(tmpDir, 'wildcard.mo');
+    fs.writeFileSync(filePath, wildcardMatchSource);
+
+    const result = await processFiles([filePath], false, new Set(['unused-silenced-output']));
+
+    assert.strictEqual(result.issuesFound, 0, 'Wildcard-match should not be reported under unused-silenced-output');
+  });
 });

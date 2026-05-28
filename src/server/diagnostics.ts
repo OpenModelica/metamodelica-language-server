@@ -521,7 +521,7 @@ export function getDiagnosticsFromTree(tree: Parser.Tree, queries: MetaModelicaQ
     const diagnostic = nodeToDiagnostic(
       wildNode,
       LSP.DiagnosticSeverity.Information,
-      `Replace '_ :=' with '() :=' before match/matchcontinue to make explicit that output is discarded.`);
+      `Replace '_ :=' with '() :=' before match/matchcontinue to ensure output of match/matchcontinue isn't ignored by accident.`);
     (diagnostic as LSP.Diagnostic & { data: unknown }).data = { wildcardMatchFix: fix };
     diagnostics.push(diagnostic);
   }
