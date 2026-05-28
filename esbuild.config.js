@@ -1,6 +1,13 @@
 const esbuild = require('esbuild');
 const fs = require('fs');
 
+// web-tree-sitter publishes both ESM (.js) and CJS (.cjs) builds.  esbuild
+// picks the ESM version by default; that build uses import.meta.url which
+// esbuild shims as undefined in CJS output, causing createRequire(undefined)
+// to throw at runtime.  Force the CJS variant so __dirname is used instead.
+// require.resolve() applies the "require" export condition and returns .cjs.
+const webTreeSitterCjs = require.resolve('web-tree-sitter');
+
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
 const watchStr = watch ? ' watch ' : ' ';
@@ -40,7 +47,8 @@ async function main() {
     sourcesContent: false,
     platform: 'node',
     outfile: './out/server.js',
-    external: ['vscode', 'web-tree-sitter'],
+    external: ['vscode'],
+    alias: { 'web-tree-sitter': webTreeSitterCjs },
     logLevel: 'warning',
     plugins: [
       /* add to the end of plugins array */
@@ -64,7 +72,8 @@ async function main() {
     sourcesContent: false,
     platform: 'node',
     outfile: './out/cli.js',
-    external: ['vscode', 'web-tree-sitter'],
+    external: ['vscode'],
+    alias: { 'web-tree-sitter': webTreeSitterCjs },
     banner: { js: '#!/usr/bin/env node' },
     logLevel: 'warning',
     plugins: [
