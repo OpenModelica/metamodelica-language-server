@@ -34,7 +34,9 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import { Worker, isMainThread, parentPort } from 'worker_threads';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as LSP from 'vscode-languageserver/node';
 
@@ -70,6 +72,15 @@ export interface ProcessResult {
   filesProcessed: number;
   issuesFound: number;
   issuesFixed: number;
+}
+
+interface FileResult {
+  found: number;
+  fixed: number;
+  // Lines to emit on stdout (per-file diagnostics, "fixed N issues" summary).
+  out: string[];
+  // Lines to emit on stderr (self-overlap warnings).
+  err: string[];
 }
 
 /**
@@ -127,33 +138,24 @@ function getFixEdits(
 }
 
 /**
- * Process a set of file/directory paths: detect issues and optionally apply
- * the quick-fixes in-place.
- *
- * @param paths   File or directory paths to process.
- * @param fix     When true, apply quick-fixes and save files. When false, only report.
- * @param checks  Which checks to run/fix. Defaults to all checks.
- * @returns       Summary of what was found and fixed.
+ * Process one file: detect issues and optionally apply quick-fixes in-place.
+ * Returns counts and the log lines that would have been emitted, without
+ * actually printing anything — callers collect and print so output stays
+ * grouped per-file even when files are processed in parallel.
  */
-export async function processFiles(
-  paths: string[],
+async function processOneFile(
+  filePath: string,
   fix: boolean,
-  checks: Set<CheckName> = new Set(ALL_CHECKS),
-): Promise<ProcessResult> {
-  const moFiles: string[] = [];
-  for (const p of paths) {
-    moFiles.push(...findMoFiles(p));
-  }
-
-  let totalIssuesFound = 0;
-  let totalIssuesFixed = 0;
+  checks: Set<CheckName>,
+): Promise<FileResult> {
+  const result: FileResult = { found: 0, fixed: 0, out: [], err: [] };
 
   // Re-create the parser per file. Tree-sitter's wasm heap can grow but
   // never shrinks; on very large files (with hundreds of fixes) it would
   // eventually abort with 'Aborted()'. A fresh parser per file resets the
   // heap and keeps memory bounded regardless of total batch size.
-  for (const filePath of moFiles) {
-    const parser = await initializeMetaModelicaParser();
+  const parser = await initializeMetaModelicaParser();
+  try {
     const analyzer = new Analyzer(parser);
     const absPath = path.resolve(filePath);
     const uri = `file://${absPath}`;
@@ -197,7 +199,7 @@ export async function processFiles(
             }
           }
           if (selfOverlap) {
-            console.error(`${filePath}: skipping self-overlapping fix from "${diagnostic.message}"`);
+            result.err.push(`${filePath}: skipping self-overlapping fix from "${diagnostic.message}"`);
             continue;
           }
           accepted.push(...edits);
@@ -224,9 +226,9 @@ export async function processFiles(
       }
       if (fixed > 0) {
         fs.writeFileSync(absPath, content);
-        console.log(`${filePath}: fixed ${fixed} issue(s)`);
+        result.out.push(`${filePath}: fixed ${fixed} issue(s)`);
       }
-      totalIssuesFixed += fixed;
+      result.fixed = fixed;
     } else {
       const doc = TextDocument.create(uri, 'metamodelica', 1, content);
       const diagnostics = analyzer.analyze(doc);
@@ -235,21 +237,138 @@ export async function processFiles(
         const data = diagnostic.data as FixData | undefined;
         if (getFixEdits(data, checks)) {
           const { line, character } = diagnostic.range.start;
-          console.log(`${filePath}:${line + 1}:${character + 1}: ${diagnostic.message}`);
+          result.out.push(`${filePath}:${line + 1}:${character + 1}: ${diagnostic.message}`);
           count++;
         }
       }
-      totalIssuesFound += count;
+      result.found = count;
     }
-
+  } finally {
     parser.delete();
   }
 
-  return {
-    filesProcessed: moFiles.length,
-    issuesFound: totalIssuesFound,
-    issuesFixed: totalIssuesFixed,
-  };
+  return result;
+}
+
+function flushFileResult(r: FileResult): void {
+  for (const line of r.out) { console.log(line); }
+  for (const line of r.err) { console.error(line); }
+}
+
+/**
+ * Run `processOneFile` across `files` using up to `jobs` worker threads.
+ * Falls back to in-process sequential execution when `jobs <= 1`.
+ */
+async function runParallel(
+  files: string[],
+  fix: boolean,
+  checks: Set<CheckName>,
+  jobs: number,
+): Promise<ProcessResult> {
+  let totalFound = 0;
+  let totalFixed = 0;
+
+  if (jobs <= 1 || files.length <= 1) {
+    for (const filePath of files) {
+      const r = await processOneFile(filePath, fix, checks);
+      flushFileResult(r);
+      totalFound += r.found;
+      totalFixed += r.fixed;
+    }
+    return { filesProcessed: files.length, issuesFound: totalFound, issuesFixed: totalFixed };
+  }
+
+  const checksArr = Array.from(checks);
+  const workerCount = Math.min(jobs, files.length);
+  let cursor = 0;
+  let firstError: Error | null = null;
+
+  await new Promise<void>((resolve) => {
+    let active = 0;
+
+    const dispatch = (worker: Worker): void => {
+      if (firstError || cursor >= files.length) {
+        worker.postMessage({ type: 'exit' });
+        return;
+      }
+      const filePath = files[cursor++];
+      worker.postMessage({ type: 'file', filePath, fix, checks: checksArr });
+    };
+
+    const onExitOrError = (worker: Worker): void => {
+      active--;
+      // Stop workers when the queue is drained AND no more in flight.
+      if (active === 0) { resolve(); }
+    };
+
+    for (let i = 0; i < workerCount; i++) {
+      const worker = new Worker(__filename);
+      active++;
+      worker.on('message', (msg: { result?: FileResult; error?: string }) => {
+        if (msg.error) {
+          if (!firstError) { firstError = new Error(msg.error); }
+        } else if (msg.result) {
+          flushFileResult(msg.result);
+          totalFound += msg.result.found;
+          totalFixed += msg.result.fixed;
+        }
+        dispatch(worker);
+      });
+      worker.on('error', (err: unknown) => {
+        if (!firstError) {
+          firstError = err instanceof Error ? err : new Error(String(err));
+        }
+        worker.postMessage({ type: 'exit' });
+      });
+      worker.on('exit', () => onExitOrError(worker));
+      dispatch(worker);
+    }
+  });
+
+  if (firstError) { throw firstError; }
+  return { filesProcessed: files.length, issuesFound: totalFound, issuesFixed: totalFixed };
+}
+
+/**
+ * Process a set of file/directory paths: detect issues and optionally apply
+ * the quick-fixes in-place.
+ *
+ * @param paths   File or directory paths to process.
+ * @param fix     When true, apply quick-fixes and save files. When false, only report.
+ * @param checks  Which checks to run/fix. Defaults to all checks.
+ * @param jobs    Worker-thread parallelism. Defaults to 1 (in-process).
+ * @returns       Summary of what was found and fixed.
+ */
+export async function processFiles(
+  paths: string[],
+  fix: boolean,
+  checks: Set<CheckName> = new Set(ALL_CHECKS),
+  jobs = 1,
+): Promise<ProcessResult> {
+  const moFiles: string[] = [];
+  for (const p of paths) {
+    moFiles.push(...findMoFiles(p));
+  }
+  return runParallel(moFiles, fix, checks, jobs);
+}
+
+type WorkerInMessage =
+  | { type: 'file'; filePath: string; fix: boolean; checks: CheckName[] }
+  | { type: 'exit' };
+
+function runWorker(port: NonNullable<typeof parentPort>): void {
+  port.on('message', async (msg: WorkerInMessage) => {
+    if (msg.type === 'exit') {
+      port.close();
+      return;
+    }
+    try {
+      const result = await processOneFile(msg.filePath, msg.fix, new Set(msg.checks));
+      port.postMessage({ result });
+    } catch (err) {
+      port.postMessage({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
 }
 
 async function main(): Promise<void> {
@@ -257,9 +376,11 @@ async function main(): Promise<void> {
 
   if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
     console.log(
-      'Usage: mmlsc [--fix] [--check <name>]... <paths...>\n\n' +
+      'Usage: mmlsc [--fix] [--check <name>]... [--jobs N] <paths...>\n\n' +
       '  --fix            Apply quick-fixes to files in-place (default: report only)\n' +
       '  --check <name>   Limit to a specific check (repeatable; default: all checks)\n' +
+      '  --jobs N         Process files in parallel using N worker threads\n' +
+      '                   (default: number of CPU cores; pass 1 to disable)\n' +
       '  --help           Show this help\n\n' +
       '  Available check names:\n' +
       '    unused-var              Unused protected/local variables\n' +
@@ -276,8 +397,9 @@ async function main(): Promise<void> {
 
   const fix = args.includes('--fix');
 
-  // Collect --check <name> pairs
+  // Collect --check <name> and --jobs N pairs
   const requestedChecks: CheckName[] = [];
+  let jobs: number | undefined;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--check') {
       const name = args[i + 1];
@@ -291,6 +413,15 @@ async function main(): Promise<void> {
       }
       requestedChecks.push(name as CheckName);
       i++; // skip the name argument
+    } else if (args[i] === '--jobs') {
+      const value = args[i + 1];
+      const n = value ? Number.parseInt(value, 10) : NaN;
+      if (!Number.isFinite(n) || n < 1) {
+        console.error('Error: --jobs requires a positive integer');
+        process.exit(2);
+      }
+      jobs = n;
+      i++;
     }
   }
 
@@ -298,12 +429,16 @@ async function main(): Promise<void> {
     ? new Set(requestedChecks)
     : new Set(ALL_CHECKS);
 
-  const paths = args.filter((a, i) =>
-    !a.startsWith('--') && (i === 0 || args[i - 1] !== '--check')
-  );
+  const paths = args.filter((a, i) => {
+    if (a.startsWith('--')) { return false; }
+    const prev = args[i - 1];
+    return prev !== '--check' && prev !== '--jobs';
+  });
+
+  const jobsCount = jobs ?? os.cpus().length;
 
   try {
-    const result = await processFiles(paths, fix, checks);
+    const result = await processFiles(paths, fix, checks, jobsCount);
 
     if (fix) {
       console.log(`Processed ${result.filesProcessed} file(s), fixed ${result.issuesFixed} issue(s).`);
@@ -318,7 +453,11 @@ async function main(): Promise<void> {
   }
 }
 
-// Only run main() when executed directly (not when imported by tests).
-if (require.main === module) {
-  main();
+if (isMainThread) {
+  // Only run main() when executed directly (not when imported by tests).
+  if (require.main === module) {
+    main();
+  }
+} else if (parentPort) {
+  runWorker(parentPort);
 }
