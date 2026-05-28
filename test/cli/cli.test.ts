@@ -256,4 +256,65 @@ end foo;
     const remaining = await processFiles([filePath], false, new Set(['unused-match-arg']));
     assert.strictEqual(remaining.issuesFound, 1, 'Unused match arg should remain unfixed');
   });
+
+  // ── unused-silenced-output ─────────────────────────────────────────────────
+
+  const silencedOutputSource = `function binTreeintersection1
+  input Integer key;
+  output Integer result;
+algorithm
+  _ := someFunc(key);
+  result := key + 1;
+end binTreeintersection1;
+`;
+
+  const silencedOutputFixed = `function binTreeintersection1
+  input Integer key;
+  output Integer result;
+algorithm
+  someFunc(key);
+  result := key + 1;
+end binTreeintersection1;
+`;
+
+  test('detects silenced output (report mode)', async () => {
+    const filePath = path.join(tmpDir, 'silenced.mo');
+    fs.writeFileSync(filePath, silencedOutputSource);
+
+    const result = await processFiles([filePath], false);
+
+    assert.strictEqual(result.filesProcessed, 1);
+    assert.strictEqual(result.issuesFound, 1);
+    assert.strictEqual(result.issuesFixed, 0);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), silencedOutputSource);
+  });
+
+  test('fixes silenced output in-place (fix mode)', async () => {
+    const filePath = path.join(tmpDir, 'silenced.mo');
+    fs.writeFileSync(filePath, silencedOutputSource);
+
+    const result = await processFiles([filePath], true);
+
+    assert.strictEqual(result.filesProcessed, 1);
+    assert.strictEqual(result.issuesFixed, 1);
+    assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), silencedOutputFixed);
+  });
+
+  test('--check unused-silenced-output reports only silenced outputs', async () => {
+    const filePath = path.join(tmpDir, 'silenced.mo');
+    fs.writeFileSync(filePath, silencedOutputSource);
+
+    const result = await processFiles([filePath], false, new Set(['unused-silenced-output']));
+
+    assert.strictEqual(result.issuesFound, 1, 'Only the silenced-output issue should be reported');
+  });
+
+  test('--check unused-var does not report silenced outputs', async () => {
+    const filePath = path.join(tmpDir, 'silenced.mo');
+    fs.writeFileSync(filePath, silencedOutputSource);
+
+    const result = await processFiles([filePath], false, new Set(['unused-var']));
+
+    assert.strictEqual(result.issuesFound, 0, 'Silenced output should not be reported under unused-var');
+  });
 });

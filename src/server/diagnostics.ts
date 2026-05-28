@@ -50,6 +50,10 @@ export interface UnusedVarFix {
   edits: LSP.TextEdit[];
 }
 
+export interface SilencedOutputFix {
+  edits: LSP.TextEdit[];
+}
+
 /**
  * Extract tuple element expressions from a `(a, b, c)` expression node.
  * Returns null if the expression is not a parenthesized tuple with at least two elements.
@@ -320,6 +324,58 @@ function getUnusedMatchArguments(rootNode: Parser.SyntaxNode): { argNode: Parser
   return results;
 }
 
+/**
+ * Check whether a simple_expression node represents a bare wildcard `_`.
+ * Structure: simple_expression → component_reference__function_call → component_reference → WILD
+ */
+function isWildcardSimpleExpr(simpleExpr: Parser.SyntaxNode): boolean {
+  if (simpleExpr.type !== 'simple_expression') { return false; }
+  if (simpleExpr.namedChildren.length !== 1) { return false; }
+  const crf = simpleExpr.namedChildren[0];
+  if (crf.type !== 'component_reference__function_call' || crf.namedChildren.length !== 1) { return false; }
+  const cr = crf.namedChildren[0];
+  if (cr.type !== 'component_reference' || cr.namedChildren.length !== 1) { return false; }
+  return cr.namedChildren[0].type === 'WILD';
+}
+
+/**
+ * Find `_ := expr` statements in algorithm sections.  The return value of the
+ * called function is silenced unnecessarily — in MetaModelica the assignment
+ * can simply be omitted.
+ */
+function getSilencedOutputs(rootNode: Parser.SyntaxNode): { wildNode: Parser.SyntaxNode; fix: SilencedOutputFix }[] {
+  const results: { wildNode: Parser.SyntaxNode; fix: SilencedOutputFix }[] = [];
+
+  TreeSitterUtil.forEach(rootNode, (node) => {
+    if (node.type !== 'assign_clause_a') { return true; }
+
+    const lhsExpr = node.namedChildren.find(c => c.type === 'simple_expression');
+    if (!lhsExpr || !isWildcardSimpleExpr(lhsExpr)) { return true; }
+
+    const rhsExpr = node.namedChildren.find(c => c.type === 'expression');
+    if (!rhsExpr) { return true; }
+
+    // The WILD node is nested inside lhsExpr.
+    const wildNode = lhsExpr.namedChildren[0].namedChildren[0].namedChildren[0];
+
+    // Remove `_ := ` by replacing the span from the start of assign_clause_a
+    // to the start of the RHS expression with an empty string.
+    const fix: SilencedOutputFix = {
+      edits: [{
+        range: LSP.Range.create(
+          node.startPosition.row, node.startPosition.column,
+          rhsExpr.startPosition.row, rhsExpr.startPosition.column,
+        ),
+        newText: '',
+      }],
+    };
+    results.push({ wildNode, fix });
+    return true;
+  });
+
+  return results;
+}
+
 export function getDiagnosticsFromTree(tree: Parser.Tree, queries: MetaModelicaQueries): LSP.Diagnostic[] {
   const diagnostics: LSP.Diagnostic[] = [];
   let captures: Parser.QueryCapture[];
@@ -417,6 +473,17 @@ export function getDiagnosticsFromTree(tree: Parser.Tree, queries: MetaModelicaQ
       LSP.DiagnosticSeverity.Information,
       `Unused match argument '${argNode.text}': pattern is '_' in every case.`);
     (diagnostic as LSP.Diagnostic & { data: unknown }).data = { unusedArgFix: fix };
+    diagnostics.push(diagnostic);
+  }
+
+  // Inform about silenced outputs (`_ := expr`)
+  const silencedOutputs = getSilencedOutputs(tree.rootNode);
+  for (const { wildNode, fix } of silencedOutputs) {
+    const diagnostic = nodeToDiagnostic(
+      wildNode,
+      LSP.DiagnosticSeverity.Information,
+      `Unnecessary output silencing: replace '_ := expr' with just 'expr'.`);
+    (diagnostic as LSP.Diagnostic & { data: unknown }).data = { silencedOutputFix: fix };
     diagnostics.push(diagnostic);
   }
 

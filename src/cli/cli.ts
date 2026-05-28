@@ -40,11 +40,11 @@ import * as LSP from 'vscode-languageserver/node';
 
 import { initializeMetaModelicaParser } from '../server/metaModelicaParser';
 import Analyzer from '../server/analyzer';
-import { UnusedArgFix, UnusedVarFix } from '../server/diagnostics';
+import { UnusedArgFix, UnusedVarFix, SilencedOutputFix } from '../server/diagnostics';
 
-export type CheckName = 'unused-var' | 'unused-match-arg';
+export type CheckName = 'unused-var' | 'unused-match-arg' | 'unused-silenced-output';
 
-export const ALL_CHECKS: CheckName[] = ['unused-var', 'unused-match-arg'];
+export const ALL_CHECKS: CheckName[] = ['unused-var', 'unused-match-arg', 'unused-silenced-output'];
 
 export interface ProcessResult {
   filesProcessed: number;
@@ -92,12 +92,13 @@ function applyEdits(content: string, uri: string, edits: LSP.TextEdit[]): string
  * checks, or undefined if it should be skipped.
  */
 function getFixEdits(
-  data: { unusedArgFix?: UnusedArgFix; unusedVarFix?: UnusedVarFix } | undefined,
+  data: { unusedArgFix?: UnusedArgFix; unusedVarFix?: UnusedVarFix; silencedOutputFix?: SilencedOutputFix } | undefined,
   checks: Set<CheckName>,
 ): LSP.TextEdit[] | undefined {
   if (!data) { return undefined; }
   if (checks.has('unused-match-arg') && data.unusedArgFix) { return data.unusedArgFix.edits; }
   if (checks.has('unused-var') && data.unusedVarFix) { return data.unusedVarFix.edits; }
+  if (checks.has('unused-silenced-output') && data.silencedOutputFix) { return data.silencedOutputFix.edits; }
   return undefined;
 }
 
@@ -140,7 +141,7 @@ export async function processFiles(
         const doc = TextDocument.create(uri, 'metamodelica', 1, content);
         const diagnostics = analyzer.analyze(doc);
         for (const diagnostic of diagnostics) {
-          const data = diagnostic.data as { unusedArgFix?: UnusedArgFix; unusedVarFix?: UnusedVarFix } | undefined;
+          const data = diagnostic.data as { unusedArgFix?: UnusedArgFix; unusedVarFix?: UnusedVarFix; silencedOutputFix?: SilencedOutputFix } | undefined;
           const edits = getFixEdits(data, checks);
           if (edits) {
             content = applyEdits(content, uri, edits);
@@ -160,7 +161,7 @@ export async function processFiles(
       const diagnostics = analyzer.analyze(doc);
       let count = 0;
       for (const diagnostic of diagnostics) {
-        const data = diagnostic.data as { unusedArgFix?: UnusedArgFix; unusedVarFix?: UnusedVarFix } | undefined;
+        const data = diagnostic.data as { unusedArgFix?: UnusedArgFix; unusedVarFix?: UnusedVarFix; silencedOutputFix?: SilencedOutputFix } | undefined;
         if (getFixEdits(data, checks)) {
           const { line, character } = diagnostic.range.start;
           console.log(`${filePath}:${line + 1}:${character + 1}: ${diagnostic.message}`);
@@ -188,8 +189,9 @@ async function main(): Promise<void> {
       '  --check <name>   Limit to a specific check (repeatable; default: all checks)\n' +
       '  --help           Show this help\n\n' +
       '  Available check names:\n' +
-      '    unused-var         Unused protected/local variables\n' +
-      '    unused-match-arg   Unused match/matchcontinue arguments\n\n' +
+      '    unused-var              Unused protected/local variables\n' +
+      '    unused-match-arg        Unused match/matchcontinue arguments\n' +
+      '    unused-silenced-output  Unnecessary output silencing (\'_ := expr\')\n\n' +
       '  paths    Files or directories to process (.mo files, directories are scanned recursively)'
     );
     process.exit(0);
