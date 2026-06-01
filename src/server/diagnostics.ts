@@ -915,6 +915,14 @@ function getUnusedCaseBindings(rootNode: Parser.Node):
     while (scope && scope.type !== 'class_definition') { scope = scope.parent; }
     const enclosing: Parser.Node = scope ?? rootNode;
 
+    // Find the immediately enclosing match_expression so we can distinguish
+    // its local-clause declarations (pattern variables) from outer-scope
+    // declarations (constants, function parameters, etc.).
+    let matchExprNode: Parser.Node | null = node.parent;
+    while (matchExprNode && matchExprNode.type !== 'match_expression') {
+      matchExprNode = matchExprNode.parent;
+    }
+
     const outsideNames = new Set<string>();
     const skipStart = node.startIndex;
     const skipEnd = node.endIndex;
@@ -930,6 +938,51 @@ function getUnusedCaseBindings(rootNode: Parser.Node):
     }
     collectOutside(enclosing);
 
+    // Collect names declared outside the match expression (e.g. package-level
+    // constants, function parameters, protected variables). An identifier in a
+    // case pattern that matches such a name is a value match against a known
+    // symbol — not a fresh binding — and must not be flagged as unused.
+    // We scan the entire file (rootNode) so that package-level constants
+    // defined outside the enclosing function are also found.
+    // Import statements (`import Pkg.NAME;` / `import ALIAS = Pkg.Name;`)
+    // bring names from other files into scope; those are also collected here.
+    const outerDeclaredNames = new Set<string>();
+    if (matchExprNode) {
+      const matchStart = matchExprNode.startIndex;
+      const matchEnd = matchExprNode.endIndex;
+      function collectOuterDeclared(n: Parser.Node): void {
+        // Skip the match expression itself: names declared in its local clause
+        // are match-local variables, not outer constants or function params.
+        if (n.startIndex === matchStart && n.endIndex === matchEnd) { return; }
+        if (n.type === 'IDENT' && n.parent?.type === 'declaration') {
+          outerDeclaredNames.add(n.text);
+        }
+        // `import Pkg.NAME;` — implicit import: the last IDENT in name_path_star
+        // is the name brought into scope.
+        // `import ALIAS = Pkg.Name;` — explicit import: the first IDENT (alias)
+        // is the name brought into scope.
+        if (n.type === 'import_clause') {
+          const implicit = n.namedChildren.find(c => c.type === 'implicit_import_name');
+          if (implicit) {
+            const namePath = implicit.namedChildren.find(c => c.type === 'name_path_star');
+            if (namePath) {
+              const identNodes = namePath.children.filter(c => c.type === 'IDENT');
+              const last = identNodes[identNodes.length - 1];
+              if (last) { outerDeclaredNames.add(last.text); }
+            }
+          }
+          const explicit = n.namedChildren.find(c => c.type === 'explicit_import_name');
+          if (explicit) {
+            const alias = explicit.children.find(c => c.type === 'IDENT');
+            if (alias) { outerDeclaredNames.add(alias.text); }
+          }
+          return; // no need to recurse into import_clause
+        }
+        for (const c of n.children) { collectOuterDeclared(c); }
+      }
+      collectOuterDeclared(rootNode);
+    }
+
     function visit(e: Parser.Node): void {
       if (e.type === 'expression') {
         const ident = getSimpleIdentifierLeaf(e);
@@ -937,7 +990,8 @@ function getUnusedCaseBindings(rootNode: Parser.Node):
           const name = ident.text;
           if (name !== '_'
               && (insideCounts.get(name) ?? 0) === 1
-              && !outsideNames.has(name)) {
+              && !outsideNames.has(name)
+              && !outerDeclaredNames.has(name)) {
             results.push({
               identNode: ident,
               fix: {

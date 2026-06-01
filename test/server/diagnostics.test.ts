@@ -217,7 +217,7 @@ end foo;
 suite('getAllDeclarationsInTree', () => {
   test('Definitions and types', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(metaModelicaTestString)!!!;
+    const tree = parser.parse(metaModelicaTestString)!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries)
       .filter(d => !d.message.startsWith('Redundant parentheses'));
@@ -227,7 +227,7 @@ suite('getAllDeclarationsInTree', () => {
 
   test('Detects unused match argument', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(unusedMatchArgString)!!!;
+    const tree = parser.parse(unusedMatchArgString)!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
@@ -250,7 +250,7 @@ suite('getAllDeclarationsInTree', () => {
 
   test('Does not report when all match arguments are used', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(usedMatchArgString)!!!;
+    const tree = parser.parse(usedMatchArgString)!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
@@ -287,7 +287,7 @@ end addOne;
 
   test('Detects unused protected variable', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(unusedProtectedVarString)!!!;
+    const tree = parser.parse(unusedProtectedVarString)!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
@@ -306,7 +306,7 @@ end addOne;
 
   test('Does not report used protected variables', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(usedProtectedVarString)!!!;
+    const tree = parser.parse(usedProtectedVarString)!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
@@ -347,7 +347,7 @@ end foo;
 
   test('Detects unused local variable in match', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(unusedLocalVarString)!!!;
+    const tree = parser.parse(unusedLocalVarString)!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
@@ -363,7 +363,7 @@ end foo;
 
   test('Detects unused variable in comma-separated local declaration', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(unusedLocalMultiDeclString)!!!;
+    const tree = parser.parse(unusedLocalMultiDeclString)!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
@@ -398,7 +398,7 @@ end foo;
 
   test('Detects unused case-pattern binding', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(unusedCaseBindingString)!!;
+    const tree = parser.parse(unusedCaseBindingString)!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
@@ -413,6 +413,66 @@ end foo;
     assert.strictEqual(d.data.unusedCaseBindingFix.bindName, 'i');
     assert.strictEqual(d.data.unusedCaseBindingFix.edits.length, 1);
     assert.strictEqual(d.data.unusedCaseBindingFix.edits[0].newText, '_');
+  });
+
+  const enumPatternString = `
+encapsulated package ClockIndexes
+  public constant Integer RT_NO_CLOCK = 0;
+  public constant Integer RT_CLOCK_TOTAL = 1;
+
+  function toString
+    input Integer clockIndex;
+    output String str;
+  algorithm
+    str := match clockIndex
+      case RT_NO_CLOCK  then "NON";
+      case RT_CLOCK_TOTAL then "TOT";
+      else "ERR";
+    end match;
+  end toString;
+end ClockIndexes;
+`;
+
+  test('Does not flag package-level constants used as case patterns', async () => {
+    const parser = await initializeMetaModelicaParser();
+    const tree = parser.parse(enumPatternString)!;
+    const queries = new MetaModelicaQueries(parser.language!);
+    const diagnostics = getDiagnosticsFromTree(tree, queries);
+
+    const unused = diagnostics.filter(d => d.message.startsWith('Unused case binding'));
+    assert.strictEqual(unused.length, 0,
+      'Constants used as case patterns must not be flagged as unused bindings');
+  });
+
+  const importedConstantPatternString = `
+package P
+  import ClockIndexes.RT_NO_CLOCK;
+  import ClockIndexes.RT_CLOCK_TOTAL;
+  import PROFILER = ClockIndexes.RT_PROFILER;
+
+  function toString
+    input Integer clockIndex;
+    output String str;
+  algorithm
+    str := match clockIndex
+      case RT_NO_CLOCK    then "NON";
+      case RT_CLOCK_TOTAL then "TOT";
+      case PROFILER       then "PRF";
+      else "ERR";
+    end match;
+  end toString;
+end P;
+`;
+
+  test('Does not flag imported names used as case patterns', async () => {
+    const parser = await initializeMetaModelicaParser();
+    const tree = parser.parse(importedConstantPatternString)!;
+    const queries = new MetaModelicaQueries(parser.language!);
+    const diagnostics = getDiagnosticsFromTree(tree, queries);
+
+    const unused = diagnostics.filter(d => d.message.startsWith('Unused case binding'));
+    assert.strictEqual(unused.length, 0,
+      'Imported names used as case patterns must not be flagged as unused bindings');
   });
 
   const multiProtectedSectionString = `
@@ -495,7 +555,7 @@ end foo;
 
   test('Does not flag function-call arguments (only plain identifiers)', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(complexArgMatchString)!!!;
+    const tree = parser.parse(complexArgMatchString)!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
@@ -537,7 +597,7 @@ end addOne;
 
   test('Detects silenced output (_ := expr)', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(silencedOutputString)!!!;
+    const tree = parser.parse(silencedOutputString)!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
@@ -561,7 +621,7 @@ end addOne;
 
   test('Does not flag regular assignments', async () => {
     const parser = await initializeMetaModelicaParser();
-    const tree = parser.parse(noSilencedOutputString)!!!;
+    const tree = parser.parse(noSilencedOutputString)!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
