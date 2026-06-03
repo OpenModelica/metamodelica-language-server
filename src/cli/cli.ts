@@ -221,7 +221,7 @@ async function processOneFile(
               `[${e.range.start.line + 1}:${e.range.start.character + 1}` +
               `-${e.range.end.line + 1}:${e.range.end.character + 1}]`,
             ).join(', ');
-            throw new Error(`${filePath}: applyEdits failed (${msg}). Accepted edits: ${ranges}`);
+            throw new Error(`${filePath}: applyEdits failed (${msg}). Accepted edits: ${ranges}`, { cause: err });
           }
           hasMore = true;
         }
