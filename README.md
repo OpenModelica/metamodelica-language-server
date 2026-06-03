@@ -82,11 +82,9 @@ building), the tool is available as `mmlsc`.
 | `unused-case-binding` | Unused binding in a `case` pattern — the bound identifier is never read in the case body | Replace the binding with `_` |
 | `unused-silenced-output` | Unnecessary output silencing (`_ := expr`) — the `_ :=` prefix can be omitted | Remove the `_ :=` prefix, keeping only the expression |
 | `wildcard-match` | Wildcard before `match`/`matchcontinue` (`_ := match …`) — `_` silently discards any return value; `()` is preferred because the compiler will error if a branch returns a non-unit value, catching accidental discards | Replace `_` with `()` |
-<<<<<<< Updated upstream
 | `dead-silenced-assign` | Dead assignment `_ := variable;` where the RHS is a plain variable (no side effect) | Drop the entire statement |
 | `redundant-parens` | Single-element parentheses in a `match` input, `case` pattern, or assignment LHS | Unwrap the parentheses |
 | `wildcard-tuple` | All-wildcard tuple pattern `(_, _, _)` nested inside a `case` pattern — every element is already a wildcard | Collapse to a single `_` |
-=======
 | `unresolved-name` | A name that cannot be resolved within the file (e.g. a module used but not imported) | _report only — no automatic fix_ |
 
 ## Updating the builtins
@@ -101,7 +99,6 @@ npm run generate-builtins -- --source /path/to/OpenModelica
 ```
 
 Re-run it whenever the builtin files change and commit the regenerated file.
->>>>>>> Stashed changes
 
 ## Installation
 
