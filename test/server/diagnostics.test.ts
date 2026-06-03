@@ -220,7 +220,8 @@ suite('getAllDeclarationsInTree', () => {
     const tree = parser.parse(metaModelicaTestString)!!!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries)
-      .filter(d => !d.message.startsWith('Redundant parentheses'));
+      .filter(d => !d.message.startsWith('Redundant parentheses'))
+      .filter(d => d.code !== 'unresolved-name');
 
     assert.deepEqual(diagnostics, expectedDiagnostics);
   });

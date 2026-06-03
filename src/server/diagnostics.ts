@@ -39,6 +39,8 @@ import * as Parser from 'web-tree-sitter';
 import { MetaModelicaQueries } from './analyzer';
 import * as TreeSitterUtil from './tree-sitter';
 import { logger } from '../util/logger';
+import { BUILTIN_NAMES } from './builtins.generated';
+import { getUnresolvedNames } from './nameResolution';
 
 export interface UnusedArgFix {
   argName: string;
@@ -1143,6 +1145,19 @@ export function getDiagnosticsFromTree(tree: Parser.Tree, queries: MetaModelicaQ
           `Parse error: Start and end identifier don't match.\nReplace '${endIdent}' with '${startIdent}'.`));
       }
     }
+  }
+
+  // Report names that cannot be resolved within the file. Reported as a
+  // warning (conservative): we only flag a name when no enclosing scope binds
+  // it, it is not a builtin, and no reachable class `extends` or imports
+  // unqualified (which could bring the name in from outside the file).
+  for (const { node, name } of getUnresolvedNames(tree.rootNode, BUILTIN_NAMES)) {
+    const diagnostic = nodeToDiagnostic(
+      node,
+      LSP.DiagnosticSeverity.Warning,
+      `Cannot resolve name '${name}'.`);
+    diagnostic.code = 'unresolved-name';
+    diagnostics.push(diagnostic);
   }
 
   return diagnostics;
