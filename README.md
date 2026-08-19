@@ -22,6 +22,21 @@ features:
 
   ![Diagnostics](images/problemMatching.png)
 
+### Commands
+
+| Command                                        | Description                                                     |
+| ---------------------------------------------- | --------------------------------------------------------------- |
+| `MetaModelica: Clear Problems of Current File` | Remove all problems reported for the file in the active editor. |
+| `MetaModelica: Clear Problems of All Files`    | Remove all problems reported by the language server.            |
+
+Both commands are available from the Command Palette (`Ctrl+Shift+P`). The
+problems of the current file can also be cleared with the *Clear All* button in
+the editor title bar of a MetaModelica file.
+
+Use them when the Problems view still shows diagnostics of an already fixed
+problem. Problems are reported again the next time a file is analyzed, i.e. as
+soon as its content changes.
+
 ## CLI (`mmlsc`)
 
 The package ships a command-line tool, `mmlsc`, for batch-processing MetaModelica

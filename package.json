@@ -33,6 +33,38 @@
   ],
   "main": "./out/client",
   "contributes": {
+    "commands": [
+      {
+        "command": "metamodelica.clearProblems",
+        "title": "Clear Problems of Current File",
+        "category": "MetaModelica",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "metamodelica.clearAllProblems",
+        "title": "Clear Problems of All Files",
+        "category": "MetaModelica",
+        "icon": "$(clear-all)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "metamodelica.clearProblems",
+          "when": "editorLangId == metamodelica",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "metamodelica.clearProblems",
+          "when": "editorLangId == metamodelica"
+        },
+        {
+          "command": "metamodelica.clearAllProblems"
+        }
+      ]
+    },
     "languages": [
       {
         "id": "metamodelica",

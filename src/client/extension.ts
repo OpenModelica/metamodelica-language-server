@@ -35,7 +35,7 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
-import { languages, workspace, ExtensionContext, TextDocument } from 'vscode';
+import { commands, languages, window, workspace, ExtensionContext, TextDocument, Uri } from 'vscode';
 import {
   LanguageClient,
   LanguageClientOptions,
@@ -43,6 +43,7 @@ import {
   TransportKind
 } from 'vscode-languageclient/node';
 import * as DebuggerExtension from '../debugger/extension';
+import { clearDiagnosticsNotification, ClearDiagnosticsParams } from '../util/protocol';
 
 let client: LanguageClient;
 
@@ -127,8 +128,65 @@ export async function activate(context: ExtensionContext) {
     clientOptions
   );
 
+  // Register commands to clear stale problems.
+  context.subscriptions.push(
+    commands.registerCommand('metamodelica.clearProblems', clearProblems),
+    commands.registerCommand('metamodelica.clearAllProblems', clearAllProblems)
+  );
+
   // Start the client. This will also launch the server
   await client.start();
+}
+
+/**
+ * Clear all problems reported for the active MetaModelica document.
+ *
+ * Problems are reported again as soon as the document is changed.
+ */
+async function clearProblems(): Promise<void> {
+  const document = window.activeTextEditor?.document;
+  if (!document) {
+    window.showInformationMessage('No active editor to clear problems for.');
+    return;
+  }
+
+  await clearDiagnostics(document.uri);
+}
+
+/**
+ * Clear all problems reported for all MetaModelica documents.
+ *
+ * Problems are reported again as soon as a document is changed.
+ */
+async function clearAllProblems(): Promise<void> {
+  await clearDiagnostics();
+}
+
+/**
+ * Clear diagnostics of one or all documents on client and server side.
+ *
+ * @param uri URI of the document to clear, all documents if omitted.
+ */
+async function clearDiagnostics(uri?: Uri): Promise<void> {
+  if (!client?.isRunning()) {
+    return;
+  }
+
+  // Remove the diagnostics the client is currently showing. The server can
+  // only clear documents it still knows about, so stale entries, e.g. of
+  // deleted or renamed files, would survive otherwise.
+  if (uri) {
+    client.diagnostics?.delete(uri);
+  } else {
+    client.diagnostics?.clear();
+  }
+
+  // Tell the server to publish empty diagnostics, so client and server agree
+  // on what is currently reported.
+  const params: ClearDiagnosticsParams = {
+    uri: uri ? client.code2ProtocolConverter.asUri(uri) : undefined
+  };
+  await client.sendNotification(clearDiagnosticsNotification, params);
 }
 
 export function deactivate(): Thenable<void> | undefined {
