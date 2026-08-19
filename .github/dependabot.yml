@@ -5,8 +5,11 @@ updates:
     schedule:
       interval: monthly
     groups:
-      actions-minor:
+      github-actions:
+        patterns:
+          - "*"
         update-types:
+          - major
           - minor
           - patch
 
