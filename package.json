@@ -183,11 +183,11 @@
     "all": "npm run postinstall && npm run esbuild && npm run lint && npm run test && npm run vscode:prepublish"
   },
   "dependencies": {
-    "tree-sitter-cli": "^0.26.9",
-    "vscode-languageclient": "^9.0.1",
-    "vscode-languageserver": "^9.0.1",
+    "tree-sitter-cli": "^0.26.12",
+    "vscode-languageclient": "^10.1.0",
+    "vscode-languageserver": "^10.1.0",
     "vscode-languageserver-textdocument": "^1.0.12",
-    "web-tree-sitter": "^0.26.9"
+    "web-tree-sitter": "^0.26.12"
   },
   "overrides": {
     "serialize-javascript": "^7.0.5"
