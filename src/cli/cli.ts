@@ -50,12 +50,12 @@ import {
 export type CheckName =
   | 'unused-var' | 'unused-match-arg' | 'unused-case-binding'
   | 'unused-silenced-output' | 'wildcard-match' | 'dead-silenced-assign'
-  | 'redundant-parens' | 'wildcard-tuple';
+  | 'redundant-parens' | 'wildcard-tuple' | 'unresolved-name';
 
 export const ALL_CHECKS: CheckName[] = [
   'unused-var', 'unused-match-arg', 'unused-case-binding',
   'unused-silenced-output', 'wildcard-match', 'dead-silenced-assign',
-  'redundant-parens', 'wildcard-tuple',
+  'redundant-parens', 'wildcard-tuple', 'unresolved-name',
 ];
 
 type FixData = {
@@ -221,7 +221,7 @@ async function processOneFile(
               `[${e.range.start.line + 1}:${e.range.start.character + 1}` +
               `-${e.range.end.line + 1}:${e.range.end.character + 1}]`,
             ).join(', ');
-            throw new Error(`${filePath}: applyEdits failed (${msg}). Accepted edits: ${ranges}`);
+            throw new Error(`${filePath}: applyEdits failed (${msg}). Accepted edits: ${ranges}`, { cause: err });
           }
           hasMore = true;
         }
@@ -237,7 +237,10 @@ async function processOneFile(
       let count = 0;
       for (const diagnostic of diagnostics) {
         const data = diagnostic.data as FixData | undefined;
-        if (getFixEdits(data, checks)) {
+        // Report a diagnostic if it has an applicable fix, or if it is an
+        // unresolved-name finding (which has no fix) and that check is enabled.
+        const isUnresolved = diagnostic.code === 'unresolved-name' && checks.has('unresolved-name');
+        if (getFixEdits(data, checks) || isUnresolved) {
           const { line, character } = diagnostic.range.start;
           result.out.push(`${filePath}:${line + 1}:${character + 1}: ${diagnostic.message}`);
           count++;
@@ -392,7 +395,8 @@ async function main(): Promise<void> {
       '    wildcard-match          Wildcard before match/matchcontinue (\'_ :=\' → \'() :=\')\n' +
       '    dead-silenced-assign    Drop entire `_ := variable;` (RHS has no side-effect)\n' +
       '    redundant-parens        Redundant single-element parens (match/case/assignment LHS)\n' +
-      '    wildcard-tuple          All-wildcard case pattern `(_, _, _)` reducible to `_`\n\n' +
+      '    wildcard-tuple          All-wildcard case pattern `(_, _, _)` reducible to `_`\n' +
+      '    unresolved-name         Names that cannot be resolved (report only, no fix)\n\n' +
       '  paths    Files or directories to process (.mo files, directories are scanned recursively)'
     );
     process.exit(0);
