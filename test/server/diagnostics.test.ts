@@ -40,6 +40,16 @@ import { MetaModelicaQueries } from '../../src/server/analyzer';
 import { initializeMetaModelicaParser } from '../../src/server/metaModelicaParser';
 import { getDiagnosticsFromTree } from '../../src/server/diagnostics';
 
+/**
+ * Get the text of a diagnostic message.
+ *
+ * LSP 3.18 allows `Diagnostic.message` to be `MarkupContent`, the language
+ * server only ever emits plain strings.
+ */
+function messageOf(diagnostic: LSP.Diagnostic): string {
+  return typeof diagnostic.message === 'string' ? diagnostic.message : diagnostic.message.value;
+}
+
 const metaModelicaTestString = `
 function foo
   input Boolean inKey;
@@ -220,7 +230,7 @@ suite('getAllDeclarationsInTree', () => {
     const tree = parser.parse(metaModelicaTestString)!!!;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries)
-      .filter(d => !d.message.startsWith('Redundant parentheses'));
+      .filter(d => !messageOf(d).startsWith('Redundant parentheses'));
 
     assert.deepEqual(diagnostics, expectedDiagnostics);
   });
@@ -231,7 +241,7 @@ suite('getAllDeclarationsInTree', () => {
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
-    const unused = diagnostics.filter(d => d.message.startsWith('Unused match argument'));
+    const unused = diagnostics.filter(d => messageOf(d).startsWith('Unused match argument'));
     assert.strictEqual(unused.length, 1, 'Exactly one unused argument expected');
 
     const d = unused[0] as LSP.Diagnostic & { data: { unusedArgFix: { argName: string; edits: LSP.TextEdit[] } } };
@@ -254,7 +264,7 @@ suite('getAllDeclarationsInTree', () => {
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
-    const unused = diagnostics.filter(d => d.message.startsWith('Unused match argument'));
+    const unused = diagnostics.filter(d => messageOf(d).startsWith('Unused match argument'));
     assert.strictEqual(unused.length, 0);
   });
 
@@ -291,7 +301,7 @@ end addOne;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
-    const unused = diagnostics.filter(d => d.message.startsWith('Unused variable'));
+    const unused = diagnostics.filter(d => messageOf(d).startsWith('Unused variable'));
     assert.strictEqual(unused.length, 1, 'Exactly one unused variable expected');
 
     const d = unused[0] as LSP.Diagnostic & { data: { unusedVarFix: { varName: string; edits: LSP.TextEdit[] } } };
@@ -310,7 +320,7 @@ end addOne;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
-    const unused = diagnostics.filter(d => d.message.startsWith('Unused variable'));
+    const unused = diagnostics.filter(d => messageOf(d).startsWith('Unused variable'));
     assert.strictEqual(unused.length, 0);
   });
 
@@ -351,7 +361,7 @@ end foo;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
-    const unused = diagnostics.filter(d => d.message.startsWith('Unused variable'));
+    const unused = diagnostics.filter(d => messageOf(d).startsWith('Unused variable'));
     assert.strictEqual(unused.length, 1, 'Exactly one unused local variable expected');
 
     const d = unused[0] as LSP.Diagnostic & { data: { unusedVarFix: { varName: string; edits: LSP.TextEdit[] } } };
@@ -367,7 +377,7 @@ end foo;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
-    const unused = diagnostics.filter(d => d.message.startsWith('Unused variable'));
+    const unused = diagnostics.filter(d => messageOf(d).startsWith('Unused variable'));
     assert.strictEqual(unused.length, 1, 'Exactly one unused variable from multi-decl line');
 
     const d = unused[0] as LSP.Diagnostic & { data: { unusedVarFix: { varName: string; edits: LSP.TextEdit[] } } };
@@ -402,7 +412,7 @@ end foo;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
-    const unused = diagnostics.filter(d => d.message.startsWith('Unused case binding'));
+    const unused = diagnostics.filter(d => messageOf(d).startsWith('Unused case binding'));
     assert.strictEqual(unused.length, 1, 'Exactly one unused case binding expected');
 
     const d = unused[0] as LSP.Diagnostic & {
@@ -435,7 +445,7 @@ end f;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
-    const unused = diagnostics.filter(d => d.message.startsWith('Unused variable'));
+    const unused = diagnostics.filter(d => messageOf(d).startsWith('Unused variable'));
     assert.strictEqual(unused.length, 1);
 
     const d = unused[0] as LSP.Diagnostic & { data: { unusedVarFix: { edits: LSP.TextEdit[] } } };
@@ -458,7 +468,7 @@ end P;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
-    const unused = diagnostics.filter(d => d.message.startsWith('Unused variable'));
+    const unused = diagnostics.filter(d => messageOf(d).startsWith('Unused variable'));
     assert.strictEqual(unused.length, 0,
       "Package-level protected constants may be referenced from other files");
   });
@@ -488,7 +498,7 @@ end foo;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
-    const unused = diagnostics.filter(d => d.message.startsWith('Unused case binding'));
+    const unused = diagnostics.filter(d => messageOf(d).startsWith('Unused case binding'));
     assert.strictEqual(unused.length, 0,
       "`ty` is read after `end match` so the pattern binding must not be flagged");
   });
@@ -499,7 +509,7 @@ end foo;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
-    const unused = diagnostics.filter(d => d.message.startsWith('Unused match argument'));
+    const unused = diagnostics.filter(d => messageOf(d).startsWith('Unused match argument'));
     assert.strictEqual(unused.length, 0, 'Function-call argument must not be flagged');
   });
 
@@ -541,7 +551,7 @@ end addOne;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
-    const silenced = diagnostics.filter(d => d.message.startsWith('Unnecessary output silencing'));
+    const silenced = diagnostics.filter(d => messageOf(d).startsWith('Unnecessary output silencing'));
     assert.strictEqual(silenced.length, 1, 'Exactly one silenced output expected');
 
     const d = silenced[0] as LSP.Diagnostic & { data: { silencedOutputFix: { edits: LSP.TextEdit[] } } };
@@ -565,7 +575,7 @@ end addOne;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
-    const silenced = diagnostics.filter(d => d.message.startsWith('Unnecessary output silencing'));
+    const silenced = diagnostics.filter(d => messageOf(d).startsWith('Unnecessary output silencing'));
     assert.strictEqual(silenced.length, 0);
   });
 
@@ -597,10 +607,10 @@ end testMatchContinue;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
-    const silenced = diagnostics.filter(d => d.message.startsWith('Unnecessary output silencing'));
+    const silenced = diagnostics.filter(d => messageOf(d).startsWith('Unnecessary output silencing'));
     assert.strictEqual(silenced.length, 0, 'must not emit silenced-output diagnostic for match');
 
-    const wildcard = diagnostics.filter(d => d.message.startsWith("Replace '_ :=' with '() :='"));
+    const wildcard = diagnostics.filter(d => messageOf(d).startsWith("Replace '_ :=' with '() :='"));
     assert.strictEqual(wildcard.length, 1, 'exactly one wildcard-match diagnostic expected');
 
     const d = wildcard[0] as LSP.Diagnostic & { data: { wildcardMatchFix: { edits: LSP.TextEdit[] } } };
@@ -621,10 +631,10 @@ end testMatchContinue;
     const queries = new MetaModelicaQueries(parser.language!);
     const diagnostics = getDiagnosticsFromTree(tree, queries);
 
-    const silenced = diagnostics.filter(d => d.message.startsWith('Unnecessary output silencing'));
+    const silenced = diagnostics.filter(d => messageOf(d).startsWith('Unnecessary output silencing'));
     assert.strictEqual(silenced.length, 0, 'must not emit silenced-output diagnostic for matchcontinue');
 
-    const wildcard = diagnostics.filter(d => d.message.startsWith("Replace '_ :=' with '() :='"));
+    const wildcard = diagnostics.filter(d => messageOf(d).startsWith("Replace '_ :=' with '() :='"));
     assert.strictEqual(wildcard.length, 1, 'exactly one wildcard-match diagnostic expected');
 
     const d = wildcard[0] as LSP.Diagnostic & { data: { wildcardMatchFix: { edits: LSP.TextEdit[] } } };
