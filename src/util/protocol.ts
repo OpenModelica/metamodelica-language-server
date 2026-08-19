@@ -33,38 +33,19 @@
  *
  */
 
-import * as vscode from 'vscode';
-import * as path from 'path';
-
-export let doc: vscode.TextDocument;
-export let editor: vscode.TextEditor;
-export let documentEol: string;
-export let platformEol: string;
-
 /**
- * Activates the OpenModelica.metamodelica-language-server extension
+ * Notification sent from the client to the server asking it to clear all
+ * published diagnostics.
+ *
+ * Diagnostics are re-computed the next time the document is analyzed, e.g.
+ * when its content changes.
  */
-export async function activate(docUri: vscode.Uri) {
-  // The extensionId is `publisher.name` from package.json
-  const ext = vscode.extensions.getExtension('OpenModelica.metamodelica-language-server')!;
-  await ext.activate();
-  try {
-    doc = await vscode.workspace.openTextDocument(docUri);
-    editor = await vscode.window.showTextDocument(doc);
-    await sleep(5000); // Wait for server activation
-  } catch (e) {
-    console.error(e);
-  }
-}
+export const clearDiagnosticsNotification = 'metamodelica/clearDiagnostics';
 
-export async function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-export const getDocPath = (p: string) => {
-  return path.resolve(__dirname, '../../../test/client/testFixture', p);
-};
-
-export const getDocUri = (p: string) => {
-  return vscode.Uri.file(getDocPath(p));
+export type ClearDiagnosticsParams = {
+  /**
+   * URI of the document to clear diagnostics for.
+   * If undefined diagnostics of all documents are cleared.
+   */
+  uri?: string;
 };

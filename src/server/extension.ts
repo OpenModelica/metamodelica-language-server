@@ -45,6 +45,7 @@ import { TextDocument} from 'vscode-languageserver-textdocument';
 import { initializeMetaModelicaParser } from './metaModelicaParser';
 import Analyzer from './analyzer';
 import { logger, setLogConnection, setLogLevel } from '../util/logger';
+import { clearDiagnosticsNotification, ClearDiagnosticsParams } from '../util/protocol';
 import {
   DeadSilencedAssignFix, RedundantParensFix, SilencedOutputFix, UnusedArgFix,
   UnusedCaseBindingFix, UnusedVarFix, WildcardMatchFix, WildcardTupleFix,
@@ -113,6 +114,7 @@ export class MetaModelicaServer {
 
     connection.onDocumentSymbol(this.onDocumentSymbol.bind(this));
     connection.onCodeAction(this.onCodeAction.bind(this));
+    connection.onNotification(clearDiagnosticsNotification, this.onClearDiagnostics.bind(this));
 
     connection.onInitialized(async () => {
       initialized = true;
@@ -148,6 +150,23 @@ export class MetaModelicaServer {
     const diagnostics = this.analyzer.analyze(document);
 
     this.connection.sendDiagnostics({uri, diagnostics});
+  }
+
+  /**
+   * Clear diagnostics of one or all documents.
+   *
+   * Diagnostics reappear as soon as the document is analyzed again, e.g. when
+   * its content changes.
+   *
+   * @param params  URI of the document to clear, all documents if omitted.
+   */
+  private onClearDiagnostics(params: ClearDiagnosticsParams | undefined): void {
+    const uris = params?.uri ? [params.uri] : this.analyzer.getAnalyzedUris();
+    logger.debug(`onClearDiagnostics: clearing ${uris.length} document(s)`);
+
+    for (const uri of uris) {
+      this.connection.sendDiagnostics({ uri, diagnostics: [] });
+    }
   }
 
   /**

@@ -150,6 +150,15 @@ export default class Analyzer {
   }
 
   /**
+   * Get URIs of all documents that have been analyzed so far.
+   *
+   * @returns Document URIs.
+   */
+  public getAnalyzedUris(): string[] {
+    return Object.keys(this.uriToAnalyzedDocument);
+  }
+
+  /**
    * Get all symbol declarations in the given file. This is used for generating an outline.
    *
    */
