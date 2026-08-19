@@ -46,19 +46,45 @@ import * as DebuggerExtension from '../debugger/extension';
 
 let client: LanguageClient;
 
+/**
+ * Language IDs that a '.mo' file can be opened with and that may be switched to
+ * 'metamodelica'. Anything else (C, Python, OpenModelica script, ...) is left alone,
+ * as is 'base-modelica', which the Modelica extension only sets after inspecting the
+ * file contents.
+ */
+const RELABELED_LANGUAGE_IDS = ['modelica', 'plaintext'];
+
+/**
+ * Check if a document should be switched to the 'metamodelica' language.
+ *
+ * Only '.mo' files that VS Code didn't already recognize as MetaModelica are
+ * candidates, so opening files of any other type doesn't change their language mode.
+ *
+ * @param fileName    File name of the document, see `TextDocument.fileName`.
+ * @param languageId  Current language ID of the document, see `TextDocument.languageId`.
+ * @returns `true` if the language of the document should be set to 'metamodelica'.
+ */
+export function isMetaModelicaCandidate(fileName: string, languageId: string): boolean {
+  return fileName.endsWith('.mo') && RELABELED_LANGUAGE_IDS.includes(languageId);
+}
+
 export async function activate(context: ExtensionContext) {
   // Activate Debugger
   DebuggerExtension.initialize(context);
   // Register event listener to set language for '.mo' files.
   const checkedFiles: { [id: string]: boolean} = {};
-  workspace.onDidOpenTextDocument((document: TextDocument) => {
+  context.subscriptions.push(workspace.onDidOpenTextDocument((document: TextDocument) => {
+    if (!isMetaModelicaCandidate(document.fileName, document.languageId)) {
+      return;
+    }
+
     if (checkedFiles[document.fileName]) {
       return;
     }
 
     checkedFiles[document.fileName] = true;
     languages.setTextDocumentLanguage(document, 'metamodelica');
-  });
+  }));
 
   // The server is implemented in node, point to packed module
   const serverModule = context.asAbsolutePath(
