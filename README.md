@@ -102,7 +102,7 @@ building), the tool is available as `mmlsc`.
 ### Via VSIX File
 
 Download the latest
-[metamodelica-language-server-0.3.0.vsix](https://github.com/OpenModelica/metamodelica-language-server/releases/download/v0.3.0/metamodelica-language-server-0.3.0.vsix)
+[metamodelica-language-server-0.3.1.vsix](https://github.com/OpenModelica/metamodelica-language-server/releases/download/v0.3.1/metamodelica-language-server-0.3.1.vsix)
 from the
 [releases](https://github.com/OpenModelica/metamodelica-language-server/releases)
 page.
@@ -112,7 +112,7 @@ on how to install a .vsix file.
 Use the `Install from VSIX` command or run
 
 ```bash
-code --install-extension metamodelica-language-server-0.3.0.vsix
+code --install-extension metamodelica-language-server-0.3.1.vsix
 ```
 
 ## Contributing ❤️
