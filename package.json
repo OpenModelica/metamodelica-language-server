@@ -181,5 +181,10 @@
     "mocha": "^12.0.0",
     "tree-sitter-gdbmi": "github:novafacing/tree-sitter-gdbmi",
     "ts-node": "^10.9.2"
+  },
+  "allowScripts": {
+    "esbuild": true,
+    "tree-sitter-cli": true,
+    "github:novafacing/tree-sitter-gdbmi": false
   }
 }
