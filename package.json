@@ -24,7 +24,7 @@
   "icon": "images/Modelica_Language_margin.jpg",
   "bugs": "https://github.com/OpenModelica/metamodelica-language-server/issues",
   "engines": {
-    "vscode": "^1.125.0",
+    "vscode": "^1.136.0",
     "node": ">=22"
   },
   "activationEvents": [
@@ -164,21 +164,21 @@
     }
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.6",
+    "@eslint/eslintrc": "^3.3.7",
     "@eslint/js": "^10.0.1",
     "@types/mocha": "^10.0.10",
-    "@types/node": "^26.2.0",
-    "@types/vscode": "^1.125.0",
-    "@typescript-eslint/eslint-plugin": "^8.67.0",
+    "@types/node": "^26.4.1",
+    "@types/vscode": "^1.136.0",
+    "@typescript-eslint/eslint-plugin": "^8.69.0",
     "@typescript-eslint/parser": "^8.67.0",
     "@vscode/debugadapter": "^1.68.0",
     "@vscode/test-electron": "^3.1.0",
-    "axios": "^1.19.0",
+    "axios": "^1.20.0",
     "esbuild": "^0.28.2",
-    "eslint": "^10.8.1",
+    "eslint": "^10.9.1",
     "glob": "^13.0.6",
-    "globals": "^17.11.0",
-    "mocha": "^11.8.0",
+    "globals": "^17.12.0",
+    "mocha": "^12.0.0",
     "tree-sitter-gdbmi": "github:novafacing/tree-sitter-gdbmi",
     "ts-node": "^10.9.2"
   }
