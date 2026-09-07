@@ -47,6 +47,9 @@ jobs:
       - name: Install the dependencies
         run: npm clean-install && npm run postinstall
 
+      - name: Lint
+        run: npm run lint
+
       - name: Build package
         run: npm run esbuild
 
