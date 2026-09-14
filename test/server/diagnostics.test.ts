@@ -425,6 +425,66 @@ end foo;
     assert.strictEqual(d.data.unusedCaseBindingFix.edits[0].newText, '_');
   });
 
+  const enumPatternString = `
+encapsulated package ClockIndexes
+  public constant Integer RT_NO_CLOCK = 0;
+  public constant Integer RT_CLOCK_TOTAL = 1;
+
+  function toString
+    input Integer clockIndex;
+    output String str;
+  algorithm
+    str := match clockIndex
+      case RT_NO_CLOCK  then "NON";
+      case RT_CLOCK_TOTAL then "TOT";
+      else "ERR";
+    end match;
+  end toString;
+end ClockIndexes;
+`;
+
+  test('Does not flag package-level constants used as case patterns', async () => {
+    const parser = await initializeMetaModelicaParser();
+    const tree = parser.parse(enumPatternString)!;
+    const queries = new MetaModelicaQueries(parser.language!);
+    const diagnostics = getDiagnosticsFromTree(tree, queries);
+
+    const unused = diagnostics.filter(d => d.message.startsWith('Unused case binding'));
+    assert.strictEqual(unused.length, 0,
+      'Constants used as case patterns must not be flagged as unused bindings');
+  });
+
+  const importedConstantPatternString = `
+package P
+  import ClockIndexes.RT_NO_CLOCK;
+  import ClockIndexes.RT_CLOCK_TOTAL;
+  import PROFILER = ClockIndexes.RT_PROFILER;
+
+  function toString
+    input Integer clockIndex;
+    output String str;
+  algorithm
+    str := match clockIndex
+      case RT_NO_CLOCK    then "NON";
+      case RT_CLOCK_TOTAL then "TOT";
+      case PROFILER       then "PRF";
+      else "ERR";
+    end match;
+  end toString;
+end P;
+`;
+
+  test('Does not flag imported names used as case patterns', async () => {
+    const parser = await initializeMetaModelicaParser();
+    const tree = parser.parse(importedConstantPatternString)!;
+    const queries = new MetaModelicaQueries(parser.language!);
+    const diagnostics = getDiagnosticsFromTree(tree, queries);
+
+    const unused = diagnostics.filter(d => d.message.startsWith('Unused case binding'));
+    assert.strictEqual(unused.length, 0,
+      'Imported names used as case patterns must not be flagged as unused bindings');
+  });
+
   const multiProtectedSectionString = `
 function f
   input Real x;
